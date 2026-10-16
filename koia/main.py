@@ -47,6 +47,15 @@ CSS = """
 .koia-fav {
     color: #e01b24;
 }
+
+/* foto atual no visor de página: contorno por cima da borda do card,
+   sem mudar o layout (offset negativo) */
+.koia-current {
+    outline-style: solid;
+    outline-width: 2px;
+    outline-color: @accent_color;
+    outline-offset: -2px;
+}
 """
 
 

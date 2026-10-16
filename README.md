@@ -9,6 +9,9 @@ interface limpa e nativa do GNOME.
 - 🔍 **Busca** — filtros por categoria, pureza (SFW / sketchy / NSFW), resolução e cores
 - ❤️ **Favoritos** — listinha local, sincroniza com os favoritos da sua conta wallhaven
 - ⬇️ **Downloads** — fila de download com progresso e visual dedicado
+- ▶️ **Visor de página** — grade navegável das páginas de resultados
+  (‹ › e campo de página no rodapé); a foto carregada fica destacada e
+  clicar em outra salta direto pra ela
 - 🖼️ **Definir wallpaper** — para GNOME e derivados, direto da galeria
 - 🏷️ **Tags e metadados** — veja os detalhes de cada wallpaper antes de baixar
 - 📌 **Bandeja (tray)** — daemon em segundo plano com slideshow e navegação
@@ -75,6 +78,7 @@ koia/
 ├── run.py            # ponto de entrada
 ├── com.koia.Koia.desktop
 ├── icon.png
+├── tests/            # suíte de regressão (GTK + D-Bus; ver tests/README.md)
 └── koia/             # pacote principal
     ├── main.py       # inicialização do app
     ├── window.py     # janela principal e galeria
@@ -83,6 +87,7 @@ koia/
     ├── config.py     # configurações
     ├── favorites*.py # model + view de favoritos
     ├── downloads_view.py
+    ├── page_view.py  # visor da página inteira (▦ da HeaderBar)
     ├── image.py      # cache e processamento de imagem
     ├── background.py # mudança de wallpaper em background
     ├── tray.py       # daemon da bandeja (GTK3; roda com --tray)

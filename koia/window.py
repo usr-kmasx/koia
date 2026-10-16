@@ -22,6 +22,7 @@ from .downloader import Downloader, destination_for, filename_of  # noqa: E402
 from .favorites import FavoritesStore  # noqa: E402
 from .favorites_view import build_favorites_dialog  # noqa: E402
 from .image import FULL_SCALE, THUMB_SCALE, ImageLoader  # noqa: E402
+from .page_view import build_page_dialog  # noqa: E402
 
 HIDE_CONTROLS_AFTER_MS = 2500
 FULL_SWAP_DELAY_MS = 250
@@ -175,16 +176,22 @@ class KoiaWindow(Adw.ApplicationWindow):
         header = Adw.HeaderBar()
         header.set_title_widget(Adw.WindowTitle.new("Koia", ""))
 
-        # aqui ficam downloads, favoritos e config (ordem visual da
-        # direita para a esquerda: [🖼][❤][⚙]). O pack_end empacota da
-        # direita para a esquerda (igual ao GTK3), então a ordem de
-        # empacotamento é a inversa da visual
+        # aqui ficam downloads, favoritos, visor de página e config
+        # (ordem visual da direita para a esquerda: [🖼][❤][▦][⚙]). O
+        # pack_end empacota da direita para a esquerda (igual ao GTK3),
+        # então a ordem de empacotamento é a inversa da visual
         config_button = Gtk.Button.new_from_icon_name(
             "preferences-system-symbolic")
         config_button.set_tooltip_text("Configurações  ·  Ctrl+,")
         config_button.set_action_name("win.preferences")
         config_button.add_css_class("flat")
         header.pack_end(config_button)
+
+        page_button = Gtk.Button.new_from_icon_name("view-grid-symbolic")
+        page_button.set_tooltip_text("Ver a página")
+        page_button.set_action_name("win.show-page")
+        page_button.add_css_class("flat")
+        header.pack_end(page_button)
 
         fav_button = Gtk.Button.new_from_icon_name("koia-heart-symbolic")
         fav_button.set_tooltip_text("Favoritos")
@@ -200,6 +207,7 @@ class KoiaWindow(Adw.ApplicationWindow):
         header.pack_end(downloads_button)
 
         self.btn_fav_header = fav_button
+        self.btn_page_header = page_button
         self.btn_downloads_header = downloads_button
         self.config_button = config_button
         toolbar.add_top_bar(header)
@@ -228,6 +236,7 @@ class KoiaWindow(Adw.ApplicationWindow):
             "toggle-favorite": lambda *_: self.toggle_favorite(),
             "show-favorites": lambda *_: self.open_favorites(),
             "show-downloads": lambda *_: self.open_downloads(),
+            "show-page": lambda *_: self.open_page_view(),
             "preferences": lambda *_: self.open_preferences(),
             "reload": lambda *_: self.reload(),
             "fullscreen": lambda *_: self.toggle_fullscreen(),
@@ -239,6 +248,12 @@ class KoiaWindow(Adw.ApplicationWindow):
             action = Gio.SimpleAction.new(name, None)
             action.connect("activate", handler)
             self.add_action(action)
+
+        # estado inicial do ▦ sincronizado AQUI, depois das ações: o
+        # GTK ressincroniza a sensibilidade do botão com o estado da
+        # ação quando ela entra no mapa — um set_sensitive(False) no
+        # _build_ui seria engolido por este add_action
+        self._sync_page_button()
 
         # mantém ícone e HeaderBar em sincronia com o estado real da janela
         self.connect("notify::fullscreened", self._on_fullscreened)
@@ -333,6 +348,7 @@ class KoiaWindow(Adw.ApplicationWindow):
         self.last_page = int(meta.get("last_page", 1) or 1)
         self.total = int(meta.get("total", 0) or 0)
         self.index = self._clamp_index(index)
+        self._sync_page_button()
 
         self._remember_page()
 
@@ -745,6 +761,51 @@ class KoiaWindow(Adw.ApplicationWindow):
             self, self.settings.get("download.folder"), self.show_wallpaper)
         dialog.present(self)
 
+    def open_page_view(self):
+        """Abre o visor da página inteira (▦ da HeaderBar)."""
+        # página inteira só existe na navegação normal — favorito e
+        # download são "página" de um item só (o botão já nasce
+        # apagado nesses casos; a guarda aqui é dupla)
+        if not self.items or self._fav_context:
+            return
+        dialog = build_page_dialog(
+            self, self.page, self.items, self.index,
+            self.images, self.jump_to,
+            self.fetch_page, self.last_page,
+        )
+        dialog.present(self)
+
+    def jump_to(self, page, index):
+        """Salta direto pra uma foto — da página atual ou de outra.
+
+        Página atual: troca o índice na hora (setas/dl/favoritar seguem
+        normais). Outra página: carrega ela no lugar — cache é
+        instantâneo, senão a janela mostra o spinner de sempre.
+        """
+        if page == self.page and self.items and not self._fav_context:
+            self.index = max(0, min(index, len(self.items) - 1))
+            self.show_current()
+        else:
+            self.load_page(page, index=index)
+
+    def fetch_page(self, page, on_done, on_error):
+        """Busca uma página SEM trocar o que a janela mostra.
+
+        Cache primeiro (as páginas navegadas ficam guardadas); rede só
+        quando não está lá. Responde no MESMO formato da API.
+        """
+        cached = self._pages.get(page)
+        if cached is not None:
+            on_done(cached)
+            return
+        self.api.search(page=page, on_done=on_done, on_error=on_error)
+
+    def _sync_page_button(self):
+        """O ▦ só faz sentido com página inteira carregada."""
+        self.btn_page_header.set_sensitive(
+            bool(self.items) and not self._fav_context
+        )
+
     def show_wallpaper(self, wallpaper):
         """Mostra um wallpaper direto (vindo do diálogo de favoritos).
 
@@ -760,6 +821,7 @@ class KoiaWindow(Adw.ApplicationWindow):
         self.page = 1
         self.last_page = 1
         self.total = 1
+        self._sync_page_button()   # item único: ▦ apaga
         self.show_current()
 
     def _leave_favorites(self):
