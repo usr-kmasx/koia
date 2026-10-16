@@ -190,6 +190,19 @@ def _card_focado(dialog, flow):
     return None
 
 
+def _botao_card(flow_child):
+    """O botão-card de dentro de um filho do FlowBox.
+
+    Nos favoritos o filho É o botão; na grade de downloads é um
+    ``Gtk.Overlay`` (botão-card por baixo, lixeira por cima) — em
+    ambos resolve ao botão que abre a imagem.
+    """
+    filho = flow_child.get_child()
+    if isinstance(filho, Gtk.Overlay):
+        return filho.get_first_child()
+    return filho
+
+
 def _cartoes(flow):
     """Botões-card da grade, na ordem."""
     cartoes = []
@@ -197,7 +210,7 @@ def _cartoes(flow):
         return cartoes
     child = flow.get_first_child()
     while child is not None:
-        botao = child.get_child()
+        botao = _botao_card(child)
         if botao is not None:
             cartoes.append(botao)
         child = child.get_next_sibling()
@@ -256,7 +269,7 @@ def _primeiro_card(flow):
     child = flow.get_first_child()
     if child is None:
         return None
-    return child.get_child()   # FlowBoxChild -> botão
+    return _botao_card(child)   # FlowBoxChild -> botão (via Overlay, se houver)
 
 
 def _on_outside_press(_gesto, _n_press, x, y, dialog):

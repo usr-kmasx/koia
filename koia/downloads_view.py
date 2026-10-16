@@ -8,6 +8,13 @@ na grade. Reconstruído a cada abertura, então nunca fica defasado.
 Clicar num card abre a imagem na janela principal como ``file://`` — o
 ``ImageLoader`` sabe ler arquivo local, e aí lixeira/aplicar/favoritar
 funcionam normalmente nela.
+
+Cada card também tem um botão de lixeira no canto superior direito da
+thumb (sempre visível): apaga o arquivo do disco **com confirmação** —
+é apagamento permanente. Os dois botões são irmãos dentro de um
+``Gtk.Overlay`` (padrão GTK4 para ação sobreposta em card): cada um
+recebe só o clique da sua área, o resto do card continua abrindo a
+imagem e o teclado segue igual.
 """
 
 import os
@@ -20,6 +27,10 @@ gi.require_version("Gdk", "4.0")
 gi.require_version("GdkPixbuf", "2.0")
 from gi.repository import Adw, Gdk, GdkPixbuf, GLib, Gtk  # noqa: E402
 
+from .background import (  # noqa: E402
+    is_current_background,
+    restore_previous_background,
+)
 from .favorites_view import (  # noqa: E402
     prender_enter_abre,
     prender_fechamento_por_clique_fora,
@@ -97,6 +108,11 @@ def build_downloads_dialog(parent, folder, on_open):
     flow.set_margin_start(18)
     flow.set_margin_end(18)
 
+    # feedback de apagar dentro do próprio diálogo (o principal fica
+    # atrás do Adw.Dialog e o toast não apareceria)
+    toasts = Adw.ToastOverlay()
+
+    cards = {}   # caminho -> card Overlay (para tirar da grade)
     for caminho in itens:
         picture = Gtk.Picture(content_fit=Gtk.ContentFit.COVER)
         picture.set_size_request(TILE, TILE)
@@ -111,18 +127,43 @@ def build_downloads_dialog(parent, folder, on_open):
             "clicked",
             lambda _tile, p=caminho: _open_tile(p, dialog, on_open),
         )
-        flow.append(tile)
+
+        # lixeira sobreposta no canto da thumb, sempre visível; os dois
+        # botões são IRMÃOS dentro do Overlay (padrão GTK4 para ação
+        # sobreposta em card): cada um recebe só o clique da sua área —
+        # sem truque de gesto — e o resto do card segue abrindo a imagem
+        btn_trash = Gtk.Button.new_from_icon_name("user-trash-symbolic")
+        btn_trash.add_css_class("flat")
+        btn_trash.add_css_class("koia-trash")
+        btn_trash.set_tooltip_text("Apagar do disco")
+        btn_trash.set_halign(Gtk.Align.END)
+        btn_trash.set_valign(Gtk.Align.START)
+        btn_trash.set_margin_top(6)
+        btn_trash.set_margin_end(6)
+        btn_trash.connect(
+            "clicked",
+            lambda _btn, p=caminho, d=dialog, c=cards, t=toasts:
+                _confirmar_e_apagar(p, d, c, flow, t),
+        )
+        card = Gtk.Overlay()
+        card.set_child(tile)
+        card.add_overlay(btn_trash)
+
+        cards[caminho] = card
+        flow.append(card)
 
     scrolled = Gtk.ScrolledWindow()
     scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
     scrolled.set_child(flow)
-    dialog.set_child(scrolled)
+    toasts.set_child(scrolled)
+    dialog.set_child(toasts)
 
     # o foco já abre no primeiro card: setas navegam a grade e o
     # Enter tem alvo
     child = flow.get_first_child()
     if child is not None:
-        dialog.props.focus_widget = child.get_child()
+        # o foco vai no botão-card de dentro do Overlay
+        dialog.props.focus_widget = child.get_child().get_first_child()
     prender_enter_abre(dialog, flow)
     prender_setas(dialog, flow)
     return dialog
@@ -146,3 +187,61 @@ def _open_tile(caminho, dialog, on_open):
     }
     on_open(wall)
     dialog.close()
+
+
+# ------------------------------------------------------------------
+# Apagar da grade (com confirmação — apagamento permanente)
+# ------------------------------------------------------------------
+def _confirmar_e_apagar(caminho, dialog, cards, flow, toasts):
+    """Pede confirmação antes de apagar o arquivo do disco.
+
+    Mesmo texto e mesmo cuidado do ⤓-lixeira da janela principal:
+    Cancelar é o padrão e “Apagar” é destrutivo.
+    """
+    nome = os.path.basename(caminho)
+    alert = Adw.AlertDialog.new(
+        "Apagar o wallpaper?",
+        f"“{nome}” será apagado permanentemente do disco.",
+    )
+    alert.add_response("cancel", "Cancelar")
+    alert.add_response("delete", "Apagar")
+    alert.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
+    alert.set_default_response("cancel")
+    alert.set_close_response("cancel")
+    alert.connect(
+        "response",
+        lambda _alert, resposta: (
+            None if resposta != "delete"
+            else _apagar(caminho, cards, flow, toasts)
+        ),
+    )
+    alert.present(dialog)
+
+
+def _apagar(caminho, cards, flow, toasts):
+    """Remove o arquivo, tira o card da grade e conta o resultado."""
+    nome = os.path.basename(caminho)
+    # era o fundo do sistema? precisa saber ANTES de o arquivo sumir
+    era_fundo = is_current_background(caminho)
+    try:
+        os.remove(caminho)
+    except OSError as exc:
+        toasts.add_toast(Adw.Toast.new(f"Não foi possível apagar: {exc}"))
+        return
+    card = cards.pop(caminho, None)
+    if card is not None:
+        child = card.get_parent()          # FlowBoxChild
+        if child is not None:
+            flow.remove(child)
+    # mesma conta do fluxo da janela: se era o wallpaper do sistema,
+    # volta para o fundo anterior (ou nada, se não há)
+    msg = f"Apagado: {nome}"
+    if era_fundo:
+        erro_restore, restaurou = restore_previous_background()
+        if restaurou:
+            msg = "Apagado — fundo do sistema restaurado"
+        elif erro_restore:
+            msg = f"{erro_restore} · arquivo apagado"
+        else:
+            msg = "Apagado — sem fundo anterior para restaurar"
+    toasts.add_toast(Adw.Toast.new(msg))
