@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Koia
+GenericName=Wallpaper Viewer
+Comment=Explorar wallpapers do wallhaven.cc
+Exec=koia
+Icon=koia
+Terminal=false
+Type=Application
+Categories=Graphics;GTK;GNOME;
+Keywords=wallpaper;wallhaven;image;picture;
+StartupWMClass=com.koia.Koia

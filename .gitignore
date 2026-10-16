@@ -1,0 +1,11 @@
+# runtime local (o app recria sozinho)
+__pycache__/
+*.pyc
+config.json
+.koia-*.pid
+.koia-*.lock
+.koia-queue.json
+
+# notas de research e arquivos de teste locais
+upstream-report/
+Sem título.jpg
