@@ -3,7 +3,9 @@
 Varre a pasta configurada (``download.folder`` — a mesma do ⤓ e do
 aplicar) por imagens e mostra as mais recentes primeiro. As thumbs são
 geradas localmente com ``Gdk.Pixbuf`` já reduzidas: nada de textura 4K
-na grade. Reconstruído a cada abertura, então nunca fica defasado.
+na grade. A decodificação roda em thread própria (entrega via
+``GLib.idle_add``), então a grade abre na hora e cada thumb entra
+quando pronta. Reconstruído a cada abertura, então nunca fica defasado.
 
 Clicar num card abre a imagem na janela principal como ``file://`` — o
 ``ImageLoader`` sabe ler arquivo local, e aí lixeira/aplicar/favoritar
@@ -18,6 +20,7 @@ imagem e o teclado segue igual.
 """
 
 import os
+import threading
 
 import gi
 
@@ -41,6 +44,10 @@ from .favorites_view import (  # noqa: E402
 TILE = 180
 
 EXTENSOES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}
+
+# quantas thumbs decodificam ao mesmo tempo — bastante para a grade
+# encher rápido, pouco para a CPU ficar brigando consigo mesma
+_THUMB_SLOTS = threading.Semaphore(4)
 
 
 def list_downloads(folder):
@@ -117,7 +124,9 @@ def build_downloads_dialog(parent, folder, on_open):
         picture = Gtk.Picture(content_fit=Gtk.ContentFit.COVER)
         picture.set_size_request(TILE, TILE)
         picture.set_can_target(False)   # o clique é do botão
-        picture.set_paintable(_thumb_local(caminho))
+        # sem decode aqui: a thumb chega da thread própria quando
+        # pronta — o diálogo abre na hora mesmo com arquivo 4K
+        _spawn_thumb(caminho, picture)
 
         tile = Gtk.Button()
         tile.add_css_class("flat")
@@ -176,6 +185,30 @@ def _thumb_local(caminho):
     except GLib.Error:
         return None
     return Gdk.Texture.new_for_pixbuf(pixbuf)
+
+
+def _spawn_thumb(caminho, picture):
+    """Decodifica a thumb fora da thread principal e entrega no ``picture``.
+
+    Antes todo o arquivo era decodizado na thread principal ANTES de o
+    diálogo abrir — a janela congelava com arquivo 4K. Agora o diálogo
+    constrói sem esperar decode e cada thumb entra quando pronta. A
+    closure segura a referência do ``picture``, então a entrega chega
+    segura mesmo se o diálogo já tiver fechado no meio.
+    """
+    def work():
+        with _THUMB_SLOTS:
+            tex = _thumb_local(caminho)
+        GLib.idle_add(_entregar_thumb, picture, tex)
+
+    threading.Thread(target=work, daemon=True, name="koia-dl-thumb").start()
+
+
+def _entregar_thumb(picture, tex):
+    """Aplica a thumb pronta (roda na thread principal)."""
+    if tex is not None:
+        picture.set_paintable(tex)
+    return GLib.SOURCE_REMOVE
 
 
 def _open_tile(caminho, dialog, on_open):
