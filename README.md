@@ -15,10 +15,6 @@ interface limpa e nativa do GNOME.
 > A API key do wallhaven é opcional (só para conteúdo NSFW e favoritos da conta).
 > Ela é salva localmente, nas configurações do app — nunca vai para o código.
 
-## Captura de tela
-
-*(por enquanto, veja `icon.png` — screenshots em breve)*
-
 ## Requisitos
 
 - Python 3.10+
