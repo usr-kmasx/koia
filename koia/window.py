@@ -88,6 +88,15 @@ class KoiaWindow(Adw.ApplicationWindow):
         # a janela se carrega sozinha ao ser mapeada na tela
         self.connect("map", self._on_mapped)
 
+        # o X da janela ESCONDE (o app segue vivo — daemon/tray); quem
+        # encerra de verdade é o "Sair" do tray. Esconder (e não destruir)
+        # preserva a navegação: "Abrir" reabre na mesma imagem
+        self.connect("close-request", self._on_close_request)
+
+    def _on_close_request(self, *_args):
+        self.hide()
+        return True  # cancela o destroy padrão
+
     def _on_mapped(self, *_args):
         if self.settings.get_bool("behavior.autoload", True) and not self.items:
             self.load_page(1)

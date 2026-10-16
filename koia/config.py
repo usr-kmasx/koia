@@ -13,16 +13,15 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
+from . import paths  # noqa: E402
+
 
 # ---------------------------------------------------------------------------
 # Valores padrão
 # ---------------------------------------------------------------------------
 
 def _default_download_dir():
-    pictures = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_PICTURES)
-    if not pictures:
-        pictures = os.path.expanduser("~/Pictures")
-    return os.path.join(pictures, "Wallpapers")
+    return paths.default_download_dir()
 
 
 DEFAULTS = {
@@ -44,6 +43,12 @@ DEFAULTS = {
 
     # --- cache em disco (LRU por data de uso, em MB) ---
     "cache.max-mb": "100",
+
+    # --- tray/daemon (geridos pelo koia/tray.py; o painel não os edita) ---
+    # "tray.slide-choice" guarda a escolha do radio ("" = Desligado);
+    # "tray.slide-paused" congela o timer sem perder o intervalo escolhido
+    "tray.slide-choice": "",
+    "tray.slide-paused": "false",
 
     # --- aparência e janela ---
     "appearance.color-scheme": "default",  # default | light | dark
@@ -91,7 +96,19 @@ class Settings:
 
     def save(self):
         keyfile = GLib.KeyFile.new()
+        # carrega o que já está em disco antes de gravar: chaves do
+        # OUTRO processo (tray.*) e de versões futuras seriam perdidas
+        # se este método reescrevesse o arquivo do zero
+        try:
+            keyfile.load_from_file(self._path, GLib.KeyFileFlags.NONE)
+        except GLib.Error:
+            pass  # primeiro uso: cria do zero
         for key, value in sorted(self._data.items()):
+            # "tray.*" é gravado pelo koia/tray.py direto no arquivo;
+            # escrever a cópia em memória aqui sobrescreveria a escolha
+            # do slide logo após o usuário trocar o intervalo
+            if key.startswith("tray."):
+                continue
             group, _, name = key.partition(".")
             keyfile.set_string(group, name, value)
         try:

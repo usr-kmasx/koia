@@ -26,6 +26,11 @@ from gi.repository import Gio, GLib  # noqa: E402
 # Esquema do papel de parede do GNOME (tema claro e escuro separados)
 BACKGROUND_SCHEMA = "org.gnome.desktop.background"
 
+# Teto da pilha de restauração. O slideshow do tray troca de wallpaper
+# a cada N segundos — sem cap ela cresce ad infinitum com o decorrer dos
+# dias. O topo sempre sobrevive; o excesso sai pelo fundo (mais antigo).
+MAX_PREVIOUS = 50
+
 
 def default_state_path():
     return os.path.join(GLib.get_user_config_dir(), "koia", "background.json")
@@ -53,7 +58,7 @@ def _push_previous(uri, state_path=None):
     stack = _load_state(path)
     if uri and (not stack or stack[-1] != uri):
         stack.append(uri)
-    _save_state(stack, path)
+    _save_state(stack[-MAX_PREVIOUS:], path)
 
 
 def _save_state(stack, state_path=None):

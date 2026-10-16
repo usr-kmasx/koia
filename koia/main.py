@@ -12,6 +12,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from . import APP_ID  # noqa: E402
 from .config import Settings  # noqa: E402
+from .ipc import WindowAgent, ensure_tray_running  # noqa: E402
 from .window import KoiaWindow  # noqa: E402
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
@@ -81,10 +82,19 @@ class KoiaApp(Adw.Application):
             flags=Gio.ApplicationFlags.DEFAULT_FLAGS,
         )
         self.settings = Settings()
+        self.agent = WindowAgent(self)
+        self._window = None
 
     # ------------------------------------------------------------------
     def do_startup(self):
         Adw.Application.do_startup(self)
+        # daemon do tray pede abertura/encerramento por D-Bus: o app
+        # sobrevive mesmo com TODAS as janelas fechadas (o "Sair" do
+        # tray chama Quit() e encerra de verdade)
+        self.hold()
+        # sem tray o app ficaria inalcançável depois do X — garante o
+        # daemon (se já rodando, o watch vê o nome e não faz nada)
+        ensure_tray_running()
         _install_css()
         _install_icon_theme()
         self._apply_color_scheme()
@@ -96,10 +106,16 @@ class KoiaApp(Adw.Application):
         self.connect("shutdown", lambda *_: self.settings.save())
 
     def do_activate(self):
-        window = self.props.active_window
-        if window is None:
-            window = KoiaWindow(self, self.settings)
-        window.present()
+        # com o X escondendo (e não destruindo) a janela, precisa
+        # lembrá-la: active_window é None na reativação e recriar uma
+        # segunda janela duplicaria a navegação da sessão
+        if self._window is None:
+            self._window = KoiaWindow(self, self.settings)
+        self._window.present()
+        # expõe OpenWindow/CloseWindow/Quit ao tray e emite o estado
+        # imediato da visibilidade (registro único, protegido no agent)
+        self.agent.register(self._window)
+        self.agent.emit_state(self._window.is_visible())
         # o carregamento inicial acontece no "map" da própria janela
 
     # ------------------------------------------------------------------
