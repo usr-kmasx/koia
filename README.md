@@ -13,6 +13,8 @@ interface limpa e nativa do GNOME.
   (‹ › e campo de página no rodapé); a foto carregada fica destacada e
   clicar em outra salta direto pra ela
 - 🖼️ **Definir wallpaper** — para GNOME e derivados, direto da galeria
+- 🌐 **Idioma** — inglês por padrão, com português (Brasil) nas
+  Configurações; a troca vale na hora, sem reiniciar
 - 🏷️ **Tags e metadados** — veja os detalhes de cada wallpaper antes de baixar
 - 📌 **Bandeja (tray)** — daemon em segundo plano com slideshow e navegação
   pelos wallpapers já baixados
@@ -41,6 +43,19 @@ rodar só o daemon (é o que o autostart usa):
 ```bash
 python3 run.py --tray
 ```
+
+## Idioma
+
+O código usa o **inglês como língua-fonte** e a opção **Idioma** das
+Configurações (no fim do painel) troca para português (Brasil).
+
+- A troca vale **na hora**: a janela é reconstruída e mantém o que estava
+  na tela (imagem, página, tela cheia); o painel de configurações fecha e
+  reabre no idioma novo
+- A bandeja é outro processo e acompanha sozinha, observando o
+  `settings.ini` — sem reiniciar nada
+- Um texto sem tradução aparece em inglês em vez de quebrar a interface;
+  `tests/i18n_test.py` falha antes disso acontecer
 
 ## Bandeja e slideshow
 
@@ -85,6 +100,7 @@ koia/
     ├── api.py        # cliente da API do wallhaven.cc
     ├── downloader.py # fila de downloads
     ├── config.py     # configurações
+    ├── i18n.py       # idioma (neutro de GTK: app GTK4 e tray GTK3)
     ├── favorites*.py # model + view de favoritos
     ├── downloads_view.py
     ├── page_view.py  # visor da página inteira (▦ da HeaderBar)

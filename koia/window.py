@@ -21,6 +21,7 @@ from .downloads_view import build_downloads_dialog  # noqa: E402
 from .downloader import Downloader, destination_for, filename_of  # noqa: E402
 from .favorites import FavoritesStore  # noqa: E402
 from .favorites_view import build_favorites_dialog  # noqa: E402
+from .i18n import num, set_idioma, t  # noqa: E402
 from .image import FULL_SCALE, THUMB_SCALE, ImageLoader  # noqa: E402
 from .page_view import build_page_dialog  # noqa: E402
 
@@ -85,11 +86,15 @@ class KoiaWindow(Adw.ApplicationWindow):
         self._page_view_page = None
         self._page_view_window = None
 
+        # diálogo de preferências aberto (o rebuild de idioma fecha e
+        # reabre ele, porque ele nasceu com os textos do idioma anterior)
+        self.prefs_dialog = None
+
         self._build_ui()
         self._install_actions()
 
-        if settings.get_bool("window.maximized", True):
-            self.maximize()
+        # abre maximizada — comportamento fixo, sem opção de desligar
+        self.maximize()
 
         settings.connect(self._on_settings_changed)
 
@@ -106,7 +111,9 @@ class KoiaWindow(Adw.ApplicationWindow):
         return True  # cancela o destroy padrão
 
     def _on_mapped(self, *_args):
-        if self.settings.get_bool("behavior.autoload", True) and not self.items:
+        # a busca sai sozinha na largada; a guarda de itens evita
+        # rebuscar toda vez que a janela volta a mapear
+        if not self.items:
             self.load_page(1)
 
     # ------------------------------------------------------------------
@@ -137,17 +144,18 @@ class KoiaWindow(Adw.ApplicationWindow):
         bar.add_css_class("koia-controls")
 
         self.btn_prev = self._icon_button(
-            "go-previous-symbolic", "Anterior", "win.go-prev")
+            "go-previous-symbolic", t("Previous"), "win.go-prev")
         self.btn_next = self._icon_button(
-            "go-next-symbolic", "Próxima", "win.go-next")
+            "go-next-symbolic", t("Next"), "win.go-next")
         self.btn_fav = self._icon_button(
-            "koia-heart-symbolic", "Favoritar", "win.toggle-favorite")
+            "koia-heart-symbolic", t("Favorite"), "win.toggle-favorite")
         self.btn_dl = self._icon_button(
-            "document-save-symbolic", "Baixar", "win.download")
+            "document-save-symbolic", t("Download"), "win.download")
         self.btn_fs = self._icon_button(
-            "view-fullscreen-symbolic", "Tela cheia  ·  F", "win.fullscreen")
+            "view-fullscreen-symbolic", t("Fullscreen  ·  F"),
+            "win.fullscreen")
         self.btn_apply = self._icon_button(
-            "video-display-symbolic", "Aplicar wallpaper",
+            "video-display-symbolic", t("Apply wallpaper"),
             "win.apply-wallpaper")
 
         for button in (self.btn_prev, self.btn_next, self.btn_fav,
@@ -189,19 +197,19 @@ class KoiaWindow(Adw.ApplicationWindow):
         # então a ordem de empacotamento é a inversa da visual
         config_button = Gtk.Button.new_from_icon_name(
             "preferences-system-symbolic")
-        config_button.set_tooltip_text("Configurações  ·  Ctrl+,")
+        config_button.set_tooltip_text(t("Settings  ·  Ctrl+,"))
         config_button.set_action_name("win.preferences")
         config_button.add_css_class("flat")
         header.pack_end(config_button)
 
         page_button = Gtk.Button.new_from_icon_name("view-grid-symbolic")
-        page_button.set_tooltip_text("Ver a página")
+        page_button.set_tooltip_text(t("View the page"))
         page_button.set_action_name("win.show-page")
         page_button.add_css_class("flat")
         header.pack_end(page_button)
 
         fav_button = Gtk.Button.new_from_icon_name("koia-heart-symbolic")
-        fav_button.set_tooltip_text("Favoritos")
+        fav_button.set_tooltip_text(t("Favorites"))
         fav_button.set_action_name("win.show-favorites")
         fav_button.add_css_class("flat")
         header.pack_end(fav_button)
@@ -231,6 +239,32 @@ class KoiaWindow(Adw.ApplicationWindow):
         button.add_css_class("flat")
         button.add_css_class("koia-control")
         return button
+
+    def _rebuild_ui(self):
+        """Troca de idioma: refaz a árvore de widgets no idioma novo.
+
+        O GTK não troca rótulos em runtime, então a única saída limpa é
+        reconstruir (``set_content`` novo, o antigo é desreferenciado).
+        Depois devolve o que a árvore nova não sabe sozinha: o estado de
+        tela cheia, a sensibilidade do ▦, a imagem em exibição e os
+        badges — todos vivem em ``self``, não nos widgets.
+        """
+        fullscreen = self._fullscreen
+        reabrir_prefs = self.prefs_dialog is not None
+        if reabrir_prefs:
+            # a janela vai nascer nova; a referência antiga morre junto
+            antigo, self.prefs_dialog = self.prefs_dialog, None
+            antigo.close()
+
+        self._build_ui()
+
+        if fullscreen:
+            self._sync_fullscreen_ui()
+        self._sync_page_button()
+        if self.items:
+            self.show_current()
+        if reabrir_prefs:
+            self.open_preferences()
 
     # ------------------------------------------------------------------
     # Ações e atalhos
@@ -276,24 +310,44 @@ class KoiaWindow(Adw.ApplicationWindow):
         if fullscreen == self._fullscreen:
             return
         self._fullscreen = fullscreen
-
         # em tela cheia a barra da janela some — sem config e sem os
         # controles da GNOME; Esc volta
+        self._sync_fullscreen_ui()
+
+    def _sync_fullscreen_ui(self):
+        """Ícone do ⛶ e HeaderBar seguem o estado de tela cheia real."""
+        fullscreen = self._fullscreen
         self.header.set_visible(not fullscreen)
         self.btn_fs.set_icon_name(
             "view-restore-symbolic" if fullscreen else "view-fullscreen-symbolic")
         self.btn_fs.set_tooltip_text(
-            "Sair da tela cheia  ·  F" if fullscreen else "Tela cheia  ·  F")
+            t("Leave fullscreen  ·  F") if fullscreen
+            else t("Fullscreen  ·  F"))
 
     def open_preferences(self):
         dialog = build_preferences(self, self.settings)
+        self.prefs_dialog = dialog
+
+        def _closed(_dialog, *_args):
+            # fecha-req do GTK4 não é destroy: dá para confiar em
+            # fechar a referência por aqui (o config já soltou os listeners)
+            if self.prefs_dialog is dialog:
+                self.prefs_dialog = None
+            return False
+
+        dialog.connect("close-request", _closed)
         dialog.present()
 
     # ------------------------------------------------------------------
     # Preferências
     # ------------------------------------------------------------------
     def _on_settings_changed(self, key):
-        if key.startswith("search."):
+        if key == "ui.language":
+            # o settings já gravou; aqui só se certifica de que o
+            # idioma está ativo antes de remontar (cobre o reset também)
+            set_idioma(self.settings.get("ui.language"))
+            self._rebuild_ui()
+        elif key.startswith("search."):
             self.reload()
         elif key == "download.folder":
             self._refresh_download_badge()
@@ -362,7 +416,7 @@ class KoiaWindow(Adw.ApplicationWindow):
         if not self.items:
             self._set_loading(False)
             self.picture.set_paintable(None)
-            self.toast("Nenhum wallpaper encontrado com estes filtros")
+            self.toast(t("No wallpapers found with these filters"))
             return
         self.show_current()
 
@@ -408,7 +462,7 @@ class KoiaWindow(Adw.ApplicationWindow):
         elif self.page < self.last_page:
             self.load_page(self.page + 1, index=0)
         else:
-            self.toast(f"Fim dos resultados — {self.total:,} wallpapers".replace(",", "."))
+            self.toast(t("End of results — %s wallpapers") % num(self.total))
 
     def go_prev(self):
         if self._fav_context:
@@ -574,7 +628,7 @@ class KoiaWindow(Adw.ApplicationWindow):
         try:
             os.makedirs(folder, exist_ok=True)
         except OSError as exc:
-            self.toast(f"Pasta inacessível: {exc}")
+            self.toast(t("Folder unreachable: %s") % exc)
             return
 
         self._dl_busy = True
@@ -590,20 +644,20 @@ class KoiaWindow(Adw.ApplicationWindow):
         self.btn_dl.remove_css_class("spinning")
         if ok:
             self._refresh_download_badge()
-            self.toast(f"Baixado: {name}")
+            self.toast(t("Downloaded: %s") % name)
         else:
-            self.toast(f"Falha ao baixar: {info}")
+            self.toast(t("Download failed: %s") % info)
 
     # ------------------------------------------------------------------
     # Apagar download (com confirmação)
     # ------------------------------------------------------------------
     def _confirm_delete(self, dest, name):
         dialog = Adw.AlertDialog.new(
-            "Apagar o wallpaper?",
-            f"“{name}” será apagado permanentemente do disco.",
+            t("Delete the wallpaper?"),
+            t("“%s” will be permanently deleted from disk.") % name,
         )
-        dialog.add_response("cancel", "Cancelar")
-        dialog.add_response("delete", "Apagar")
+        dialog.add_response("cancel", t("Cancel"))
+        dialog.add_response("delete", t("Delete"))
         dialog.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
         dialog.set_default_response("cancel")
         dialog.set_close_response("cancel")
@@ -622,20 +676,20 @@ class KoiaWindow(Adw.ApplicationWindow):
         try:
             os.remove(dest)
         except OSError as exc:
-            self.toast(f"Não foi possível apagar: {exc}")
+            self.toast(t("Could not delete: %s") % exc)
             return
         if era_aplicado:
             self._applied_path = None
         # volta ao fundo anterior; se não há (ou sumiu), não aplica nada
-        msg = f"Apagado: {name}"
+        msg = t("Deleted: %s") % name
         if era_fundo:
             erro_restore, restaurou = restore_previous_background()
             if restaurou:
-                msg = "Apagado — fundo do sistema restaurado"
+                msg = t("Deleted — system background restored")
             elif erro_restore:
-                msg = f"{erro_restore} · arquivo apagado"
+                msg = t("%s · file deleted") % erro_restore
             else:
-                msg = "Apagado — sem fundo anterior para restaurar"
+                msg = t("Deleted — no previous background to restore")
         self._refresh_download_badge()
         self._refresh_apply_badge()
         self.toast(msg)
@@ -650,11 +704,11 @@ class KoiaWindow(Adw.ApplicationWindow):
         if baixado:
             self.btn_dl.set_icon_name("user-trash-symbolic")
             self.btn_dl.add_css_class("koia-trash")
-            self.btn_dl.set_tooltip_text("Apagar do disco")
+            self.btn_dl.set_tooltip_text(t("Delete from disk"))
         else:
             self.btn_dl.set_icon_name("document-save-symbolic")
             self.btn_dl.remove_css_class("koia-trash")
-            self.btn_dl.set_tooltip_text("Baixar")
+            self.btn_dl.set_tooltip_text(t("Download"))
         return baixado
 
     # ------------------------------------------------------------------
@@ -681,13 +735,13 @@ class KoiaWindow(Adw.ApplicationWindow):
         try:
             os.makedirs(folder, exist_ok=True)
         except OSError as exc:
-            self.toast(f"Pasta inacessível: {exc}")
+            self.toast(t("Folder unreachable: %s") % exc)
             return
 
         self._apply_pending = dest
         self._dl_busy = True
         self.btn_apply.add_css_class("spinning")
-        self.toast("Baixando para aplicar…")
+        self.toast(t("Downloading to apply…"))
         self.downloader.download(
             wallpaper["path"],
             dest,
@@ -699,7 +753,7 @@ class KoiaWindow(Adw.ApplicationWindow):
         self.btn_apply.remove_css_class("spinning")
         dest = getattr(self, "_apply_pending", None)
         if not ok:
-            self.toast(f"Falha ao baixar: {info}")
+            self.toast(t("Download failed: %s") % info)
             return
         if dest:
             self._refresh_download_badge()
@@ -710,7 +764,7 @@ class KoiaWindow(Adw.ApplicationWindow):
         if error is None:
             self._applied_path = path
             self._refresh_apply_badge()
-            self.toast("Wallpaper aplicado")
+            self.toast(t("Wallpaper applied"))
         else:
             self.toast(error)
 
@@ -738,7 +792,8 @@ class KoiaWindow(Adw.ApplicationWindow):
             return
         favorited = self.favorites.toggle(wallpaper)
         self._refresh_fav_badge()
-        self.toast("Favoritado" if favorited else "Removido dos favoritos")
+        self.toast(t("Added to favorites") if favorited
+                   else t("Removed from favorites"))
 
     def _refresh_fav_badge(self):
         """Contorno branco quando não é favorito; preenchido e VERMELHO
@@ -749,11 +804,11 @@ class KoiaWindow(Adw.ApplicationWindow):
         if favorited:
             self.btn_fav.set_icon_name("koia-heart-filled-symbolic")
             self.btn_fav.add_css_class("koia-fav")
-            self.btn_fav.set_tooltip_text("Remover dos favoritos")
+            self.btn_fav.set_tooltip_text(t("Remove from favorites"))
         else:
             self.btn_fav.set_icon_name("koia-heart-symbolic")
             self.btn_fav.remove_css_class("koia-fav")
-            self.btn_fav.set_tooltip_text("Favoritar")
+            self.btn_fav.set_tooltip_text(t("Favorite"))
         return favorited
 
     def open_favorites(self):

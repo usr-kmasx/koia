@@ -13,6 +13,7 @@ gi.require_version("Adw", "1")
 gi.require_version("Gdk", "4.0")
 from gi.repository import Adw, Gdk, Gtk  # noqa: E402
 
+from .i18n import t  # noqa: E402
 from .image import THUMB_SCALE  # noqa: E402
 
 # lado do card de wallpaper (quadrado)
@@ -28,7 +29,7 @@ def build_favorites_dialog(parent, favorites, images, on_open):
       abre ele e o diálogo se fecha.
     """
     dialog = Adw.Dialog(
-        title="Favoritos",
+        title=t("Favorites"),
         content_width=780,
         content_height=640,
     )
@@ -41,9 +42,7 @@ def build_favorites_dialog(parent, favorites, images, on_open):
     if not items:
         dialog.set_child(Adw.StatusPage(
             icon_name="koia-heart-symbolic",
-            title="Nenhum favorito ainda",
-            description="Toque no coração de um wallpaper para "
-                        "guardá-lo aqui.",
+            title=t("No favorites yet"),
         ))
         prender_enter_abre(dialog, None)
         prender_setas(dialog, None)

@@ -9,6 +9,8 @@ import gi
 gi.require_version("Soup", "3.0")
 from gi.repository import GLib, Soup  # noqa: E402
 
+from .i18n import t  # noqa: E402
+
 _CHUNK = 64 * 1024
 
 
@@ -64,11 +66,11 @@ class Downloader:
         try:
             os.makedirs(os.path.dirname(dest), exist_ok=True)
         except OSError as exc:
-            return False, f"pasta inacessível: {exc}"
+            return False, t("folder unreachable: %s") % exc
         try:
             stream = self.session.send(message, None)
         except GLib.Error as exc:
-            return False, f"falha de rede: {exc.message}"
+            return False, t("network failure: %s") % exc.message
 
         if message.get_status() != 200:
             return False, f"HTTP {message.get_status()}"
@@ -88,10 +90,10 @@ class Downloader:
                         GLib.idle_add(_progress, on_progress, received, total)
         except GLib.Error as exc:
             _cleanup(tmp)
-            return False, f"transferência interrompida: {exc.message}"
+            return False, t("transfer interrupted: %s") % exc.message
         except OSError as exc:
             _cleanup(tmp)
-            return False, f"não foi possível gravar: {exc}"
+            return False, t("could not write: %s") % exc
         finally:
             try:
                 stream.close(None)
@@ -100,14 +102,14 @@ class Downloader:
 
         if received == 0:
             _cleanup(tmp)
-            return False, "arquivo vazio"
+            return False, t("empty file")
 
         try:
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             os.replace(tmp, dest)
         except OSError as exc:
             _cleanup(tmp)
-            return False, f"não foi possível salvar: {exc}"
+            return False, t("could not save: %s") % exc
 
         return True, dest
 

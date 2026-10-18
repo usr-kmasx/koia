@@ -27,6 +27,7 @@ from gi.repository import AyatanaAppIndicator3, Gio, GLib, Gtk  # noqa: E402
 
 from . import paths  # noqa: E402
 from .background import set_as_background  # noqa: E402
+from .i18n import PADRAO, get_idioma, set_idioma, t  # noqa: E402
 from .ipc import APP_ID, OBJ_PATH, TRAY_BUS  # noqa: E402
 
 # escolha do slide guardada como "5s|10s|15s|30s|60s|1m|3m|5m|30m|60m|"
@@ -213,6 +214,13 @@ class KoiaTray(Gtk.Application):
         self._slide_choice = _read_key("tray.slide-choice", CHOICE_EMPTY) \
             or CHOICE_EMPTY
         self._paused = _read_key("tray.slide-paused", "false") == "true"
+        # o menu é montado no do_startup, então dá para já nascer no
+        # idioma salvo pelo app GTK4
+        set_idioma(_read_key("ui.language", PADRAO))
+
+        # monitor fica vivo na instância: sem referência o GC derruba
+        # o FileMonitor e o menu nunca mais acompanharia o idioma
+        self._settings_monitor = None
 
     # ------------------------------------------------------------------
     def do_startup(self):
@@ -242,34 +250,39 @@ class KoiaTray(Gtk.Application):
         )
         self.indicator.set_title("Koia Tray")
         self.indicator.set_status(AyatanaAppIndicator3.IndicatorStatus.ACTIVE)
+        self._watch_settings_file()
+        self._rebuild_menu()
 
+    def _rebuild_menu(self):
+        """Monta o menu no idioma ativo — o app GTK4 muda ``ui.language``
+        no settings.ini e ele é remontado ao vivo por esse caminho."""
         menu = Gtk.Menu()
 
-        item1 = Gtk.MenuItem(label="Abrir")
+        item1 = Gtk.MenuItem(label=t("Open"))
         item1.connect("activate", self._on_open_close)
         menu.append(item1)
         self.menu_items["open_close"] = item1
 
-        item2 = Gtk.MenuItem(label="Próximo")
+        item2 = Gtk.MenuItem(label=t("Next wallpaper"))
         item2.connect("activate", self._on_next)
         menu.append(item2)
         self.menu_items["next"] = item2
 
-        item3 = Gtk.MenuItem(label="Anterior")
+        item3 = Gtk.MenuItem(label=t("Previous wallpaper"))
         item3.connect("activate", self._on_prev)
         menu.append(item3)
         self.menu_items["prev"] = item3
 
         menu.append(self._build_slide_submenu())
 
-        item5 = Gtk.MenuItem(label="Pausar")
+        item5 = Gtk.MenuItem(label=t("Pause"))
         item5.connect("activate", self._on_pause_resume)
         menu.append(item5)
         self.menu_items["pause"] = item5
 
         menu.append(Gtk.SeparatorMenuItem())
 
-        item6 = Gtk.MenuItem(label="Sair")
+        item6 = Gtk.MenuItem(label=t("Quit"))
         item6.connect("activate", self._on_quit)
         menu.append(item6)
         self.menu_items["quit"] = item6
@@ -279,20 +292,45 @@ class KoiaTray(Gtk.Application):
 
         self._refresh_menu_state()
 
+    def _watch_settings_file(self):
+        """Repassa ``settings.ini`` para o menu quando o idioma mudar.
+
+        Os radios do slide não são reconstruídos por aqui (a chave deles
+        é o ``tray.slide-choice``, gravado por este processo): só o
+        idioma precisa de remontagem.
+        """
+        try:
+            monitor = Gio.File.new_for_path(paths.SETTINGS_PATH).monitor_file(
+                Gio.FileMonitorFlags.NONE, None)
+        except GLib.Error as exc:  # pragma: no cover - fs exótico
+            print(f"[koia-tray] não observa settings.ini: {exc.message}")
+            return
+        monitor.connect("changed", self._on_settings_file_changed)
+        self._settings_monitor = monitor
+
+    def _on_settings_file_changed(self, _monitor, _file, _other, _event):
+        # cada save dispara vários eventos; comparar com o idioma ativo
+        # deixa os repetidos idempotentes (só o primeiro remonta)
+        idioma = _read_key("ui.language", PADRAO)
+        if idioma == get_idioma():
+            return
+        set_idioma(idioma)
+        self._rebuild_menu()
+
     def _build_slide_submenu(self):
         """Menu 4: Slide koia → Desligado | Segundos ▸ | Minutos ▸."""
-        root_item = Gtk.MenuItem(label="Slide koia")
+        root_item = Gtk.MenuItem(label=t("Koia slide"))
         submenu = Gtk.Menu()
 
         # grupo único: todos os radios dividem o grupo do Desligado
-        off_item = Gtk.RadioMenuItem(label="Desligado", group=None)
+        off_item = Gtk.RadioMenuItem(label=t("Off"), group=None)
         off_item.set_active(not self._slide_choice)
         off_item.connect("toggled", self._on_slide_off)
         submenu.append(off_item)
         self.slide_off_item = off_item
 
-        for title, filter_fn in (("Segundos", lambda k: k.endswith("s")),
-                                 ("Minutos", lambda k: k.endswith("m"))):
+        for title, filter_fn in ((t("Seconds"), lambda k: k.endswith("s")),
+                                 (t("Minutes"), lambda k: k.endswith("m"))):
             parent = Gtk.MenuItem(label=title)
             submenu.append(parent)
             child = Gtk.Menu()
@@ -318,12 +356,12 @@ class KoiaTray(Gtk.Application):
         has_wallpapers = len(wallpapers) > 0
 
         open_close.set_label(
-            "Fechar" if self.window_open is True else "Abrir")
+            t("Close") if self.window_open is True else t("Open"))
         self.menu_items["next"].set_sensitive(has_wallpapers)
         self.menu_items["prev"].set_sensitive(has_wallpapers)
         self.menu_items["pause"].set_sensitive(bool(self._slide_choice))
         self.menu_items["pause"].set_label(
-            "Retomar" if self._paused else "Pausar")
+            t("Resume") if self._paused else t("Pause"))
 
     def _download_folder(self):
         folder = _read_key("download.folder", paths.default_download_dir())

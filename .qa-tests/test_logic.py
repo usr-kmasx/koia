@@ -189,8 +189,8 @@ check("ícone virou preenchido",
       win.btn_fav.get_icon_name() == "koia-heart-filled-symbolic")
 check("fav ganhou o vermelho (.koia-fav)",
       win.btn_fav.has_css_class("koia-fav"))
-check("tooltip virou Remover", win.btn_fav.get_tooltip_text() == "Removido dos favoritos"
-      or win.btn_fav.get_tooltip_text() == "Remover dos favoritos",
+check("tooltip virou Remover", win.btn_fav.get_tooltip_text() in (
+      "Removed from favorites", "Remove from favorites"),
       win.btn_fav.get_tooltip_text())
 check("badge devolve True", win._refresh_fav_badge() is True)
 win.toggle_favorite()
@@ -432,7 +432,7 @@ check("com arquivo: vira lixeira",
       win.btn_dl.get_icon_name() == "user-trash-symbolic"
       and win.btn_dl.has_css_class("koia-trash"))
 check("tooltip: Apagar do disco",
-      win.btn_dl.get_tooltip_text() == "Apagar do disco")
+      win.btn_dl.get_tooltip_text() == "Delete from disk")
 win.start_download()
 check("clique NÃO apaga sem confirmar", os.path.exists(dest))
 win._on_delete_response("cancel", dest, "0.jpg")

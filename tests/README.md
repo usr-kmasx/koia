@@ -11,6 +11,7 @@ pacote pela própria localização, então podem rodar de qualquer lugar.
     GSETTINGS_BACKEND=memory python3 tests/downloads_timing_test.py
     GSETTINGS_BACKEND=memory python3 tests/page_view_test.py
     GSETTINGS_BACKEND=memory python3 tests/page_button_test.py
+    GSETTINGS_BACKEND=memory python3 tests/i18n_test.py
 
 - `downloads_delete_test` — grade de downloads: cards Overlay, lixeira
   (um alerta, Cancelar/Apagar), foco/teclado, estado vazio.
@@ -24,6 +25,13 @@ pacote pela própria localização, então podem rodar de qualquer lugar.
   `win.show-page`, sensibilidade por contexto, `fetch_page`
   cache-first, `jump_to` (mesma página vs. outra) e a lembrança do ▦
   (vale só enquanto a janela segue na mesma página).
+- `i18n_test` — paridade de idioma: varre o código por `t("...")` por
+  AST (todo literal tem entrada no pt-BR, nenhuma chave fica órfã),
+  o painel nos dois idiomas (a opção Idioma fecha o painel antes de
+  "Restaurar padrões", nomes nativos intactos), a regra do tray (GTK3
+  importa o `i18n` mas nunca o `config`) e a troca em runtime
+  (reconstrói a janela e devolve imagem, página, ▦, tela cheia e
+  preferências).
 
 ## Tray/bandeja (bus PRIVADO por processo)
 

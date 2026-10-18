@@ -25,6 +25,7 @@ from .favorites_view import (  # noqa: E402
     prender_fechamento_por_clique_fora,
     prender_setas,
 )
+from .i18n import t  # noqa: E402
 from .image import THUMB_SCALE  # noqa: E402
 
 # lado do card de wallpaper (quadrado) — mesmo tamanho dos outros grids
@@ -54,7 +55,7 @@ def build_page_dialog(parent, page, items, index, images, on_jump,
         max(1, min(int(window_page), last_page))
 
     dialog = Adw.Dialog(
-        title=f"Página {page}",
+        title=t("Page %s") % page,
         content_width=780,
         content_height=640,
     )
@@ -94,14 +95,14 @@ def build_page_dialog(parent, page, items, index, images, on_jump,
     indicador = Adw.Spinner()
     indicador.set_visible(False)
     btn_prev = Gtk.Button.new_from_icon_name("go-previous-symbolic")
-    btn_prev.set_tooltip_text("Página anterior")
+    btn_prev.set_tooltip_text(t("Previous page"))
     btn_prev.add_css_class("flat")
     btn_next = Gtk.Button.new_from_icon_name("go-next-symbolic")
-    btn_next.set_tooltip_text("Página seguinte")
+    btn_next.set_tooltip_text(t("Next page"))
     btn_next.add_css_class("flat")
     spin = Gtk.SpinButton.new_with_range(1, last_page, 1)
     spin.set_value(page)   # nasce na página exibida (senão fica no mínimo 1)
-    spin.set_tooltip_text("Ir para a página — digite o número e Enter")
+    spin.set_tooltip_text(t("Go to page"))
     spin.set_width_chars(4)
     rodape = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
     rodape.set_halign(Gtk.Align.CENTER)
@@ -140,7 +141,7 @@ def build_page_dialog(parent, page, items, index, images, on_jump,
     def chegou(pagina, resultado):
         dados = resultado.get("data") or []
         if not dados:
-            errou("Página vazia")
+            errou(t("Empty page"))
             return
         meta = resultado.get("meta") or {}
         estado["last"] = max(1, int(meta.get("last_page", estado["last"])
@@ -149,7 +150,7 @@ def build_page_dialog(parent, page, items, index, images, on_jump,
         renderizar(pagina, dados)
         spin.set_range(1, estado["last"])
         spin.set_value(pagina)
-        dialog.set_title(f"Página {pagina}")
+        dialog.set_title(t("Page %s") % pagina)
         estado["busy"] = False
         controles(True)
         if on_page is not None:

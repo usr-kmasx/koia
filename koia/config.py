@@ -14,6 +14,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
 from . import paths  # noqa: E402
+from .i18n import IDIOMAS, decimal, set_idioma, t  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -50,10 +51,11 @@ DEFAULTS = {
     "tray.slide-choice": "",
     "tray.slide-paused": "false",
 
-    # --- aparência e janela ---
+    # --- aparência ---
     "appearance.color-scheme": "default",  # default | light | dark
-    "window.maximized": "true",
-    "behavior.autoload": "true",
+
+    # --- idioma da interface (inglês é a língua-fonte do código) ---
+    "ui.language": "en-US",
 }
 
 
@@ -72,6 +74,9 @@ class Settings:
         self._listeners = []
         os.makedirs(os.path.dirname(self._path), exist_ok=True)
         self._load()
+        # o idioma precisa estar ativo ANTES de qualquer widget nascer;
+        # a troca em runtime passa por ``window._on_settings_changed``
+        set_idioma(self.get("ui.language"))
 
     # -- io ---------------------------------------------------------------
     def _load(self):
@@ -171,21 +176,25 @@ class Settings:
 # Constantes de UI
 # ---------------------------------------------------------------------------
 
+# Rótulos de UI: a LÍNGUA-FONTE é o inglês, e o dicionário do i18n
+# traz o pt-BR. São constantes de módulo, então são traduzidos no
+# PONTO DE USO (build_preferences), não aqui — no import ainda não se
+# sabe o idioma e o rótulo ficaria congelado no padrão.
 SORTINGS = [
-    ("relevance", "Relevância"),
-    ("random", "Aleatório"),
-    ("date_added", "Data de adição"),
-    ("views", "Mais vistos"),
-    ("favorites", "Mais favoritados"),
+    ("relevance", "Relevance"),
+    ("random", "Random"),
+    ("date_added", "Date added"),
+    ("views", "Most viewed"),
+    ("favorites", "Most favorited"),
     ("toplist", "Toplist"),
 ]
 
-ORDERS = [("desc", "Descendente"), ("asc", "Ascendente")]
+ORDERS = [("desc", "Descending"), ("asc", "Ascending")]
 
 TOP_RANGES = [
-    ("1d", "Último dia"), ("3d", "Últimos 3 dias"), ("1w", "Última semana"),
-    ("1M", "Último mês"), ("3M", "Últimos 3 meses"),
-    ("6M", "Últimos 6 meses"), ("1y", "Último ano"),
+    ("1d", "Last day"), ("3d", "Last 3 days"), ("1w", "Last week"),
+    ("1M", "Last month"), ("3M", "Last 3 months"),
+    ("6M", "Last 6 months"), ("1y", "Last year"),
 ]
 
 ATLEAST = [
@@ -238,14 +247,6 @@ def _combo_row(title, subtitle, options, current, on_change):
             on_change(values[idx])
 
     row.connect("notify::selected", _changed)
-    return row
-
-
-def _switch_row(title, subtitle, active, on_change):
-    row = Adw.SwitchRow(title=title, active=active)
-    if subtitle:
-        row.set_subtitle(subtitle)
-    row.connect("notify::active", lambda r, _p: on_change(r.get_active()))
     return row
 
 
@@ -370,12 +371,12 @@ def _join(items):
 
 
 def _human(size):
-    """Tamanho legível em português (ponto decimal vira vírgula)."""
+    """Tamanho legível no idioma ativo (separador decimal local)."""
     if size < 1024:
         return f"{size} B"
     if size < 1024 * 1024:
         return f"{size / 1024:.0f} KB"
-    return f"{size / (1024 * 1024):.1f} MB".replace(".", ",")
+    return decimal(f"{size / (1024 * 1024):.1f} MB")
 
 
 # ---------------------------------------------------------------------------
@@ -390,17 +391,17 @@ def build_preferences(parent, settings):
         search_enabled=True,
         default_width=620,
         default_height=680,
-        title="Configurações",
+        title=t("Settings"),
     )
 
-    page = Adw.PreferencesPage(title="Configurações", icon_name="preferences-system-symbolic")
+    page = Adw.PreferencesPage(title=t("Settings"),
+                                icon_name="preferences-system-symbolic")
 
     # ---------------- Busca ----------------
-    g_search = Adw.PreferencesGroup(
-        title="Busca",
-        description="Parâmetro q — palavras-chave, #tag, @usuário, type:jpg, like:id",
-    )
-    entry = Adw.EntryRow(title="Termo de busca")
+    # q aceita palavras-chave, #tag, @usuário e comandos da API como
+    # type:jpg ou like:id — a lista pertence à documentação, não à tela
+    g_search = Adw.PreferencesGroup(title=t("Search"))
+    entry = Adw.EntryRow(title=t("Search term"))
     entry.set_text(settings.get("search.q"))
     entry.connect(
         "changed",
@@ -419,16 +420,14 @@ def build_preferences(parent, settings):
     page.add(g_search)
 
     # ---------------- Pureza ----------------
-    g_purity = Adw.PreferencesGroup(
-        title="Pureza",
-        description="Parâmetro purity — SFW, NSFW e Sketchy",
-    )
+    # os três bits do bitmask "purity": sfw | sketchy | nsfw
+    g_purity = Adw.PreferencesGroup(title=t("Purity"))
 
     pur_checks, pur_rows, sync_purity = _bitmask_group(
         settings, "search.purity",
-        [("SFW (seguro)", None),
-         ("Sketchy (duvidoso)", None),
-         ("NSFW (adulto)", "Requer chave de API do wallhaven.cc")],
+        [(t("SFW (safe)"), None),
+         (t("Sketchy (risky)"), None),
+         (t("NSFW (adult)"), t("Requires a wallhaven.cc API key"))],
         g_purity,
         # exige SFW ou Sketchy: NSFW sozinho devolve 0 resultados sem chave
         keep=lambda v: v[0] == "1" or v[1] == "1",
@@ -439,19 +438,23 @@ def build_preferences(parent, settings):
     page.add(g_purity)
 
     # ---------------- Ordenação ----------------
-    g_sort = Adw.PreferencesGroup(title="Ordenação")
+    # os três rótulos vêm das tabelas do topo, traduzidos no ponto de uso
+    g_sort = Adw.PreferencesGroup(title=t("Sorting"))
     row_sorting = _combo_row(
-        "Ordenar por", "Parâmetro sorting", SORTINGS,
+        t("Sort by"), None,
+        [(v, t(label)) for v, label in SORTINGS],
         settings.get("search.sorting"),
         lambda v: (settings.set("search.sorting", v), _sync_toprange()),
     )
     row_order = _combo_row(
-        "Direção", "Parâmetro order", ORDERS,
+        t("Direction"), None,
+        [(v, t(label)) for v, label in ORDERS],
         settings.get("search.order"),
         lambda v: settings.set("search.order", v),
     )
     row_toprange = _combo_row(
-        "Período da toplist", "Parâmetro topRange", TOP_RANGES,
+        t("Toplist period"), None,
+        [(v, t(label)) for v, label in TOP_RANGES],
         settings.get("search.toprange"),
         lambda v: settings.set("search.toprange", v),
     )
@@ -466,20 +469,19 @@ def build_preferences(parent, settings):
     page.add(g_sort)
 
     # ---------------- Resolução e proporção ----------------
-    g_size = Adw.PreferencesGroup(
-        title="Tamanho",
-        description="Parâmetros atleast, resolutions e ratios",
-    )
-    atleast_options = [("", "Qualquer")] + [(r, r) for r in ATLEAST if r]
+    # atleast, resolutions e ratios: o mínimo exato, a lista exata e a
+    # proporção — três parâmetros da API que dividem o mesmo assunto
+    g_size = Adw.PreferencesGroup(title=t("Size"))
+    atleast_options = [("", t("Any"))] + [(r, r) for r in ATLEAST if r]
     g_size.add(
         _combo_row(
-            "Resolução mínima", "Parâmetro atleast", atleast_options,
+            t("Minimum resolution"), None, atleast_options,
             settings.get("search.atleast"),
             lambda v: settings.set("search.atleast", v),
         )
     )
 
-    exp_res = Adw.ExpanderRow(title="Resoluções exatas", subtitle="Parâmetro resolutions")
+    exp_res = Adw.ExpanderRow(title=t("Exact resolutions"))
     selected_res = set(_csv(settings.get("search.resolutions")))
 
     def _toggle_res(value, active):
@@ -491,7 +493,7 @@ def build_preferences(parent, settings):
         _check_row(g_size, exp_res, res, res in selected_res, _toggle_res)
     g_size.add(exp_res)
 
-    exp_ratio = Adw.ExpanderRow(title="Proporções", subtitle="Parâmetro ratios")
+    exp_ratio = Adw.ExpanderRow(title=t("Aspect ratios"))
     selected_ratios = set(_csv(settings.get("search.ratios")))
 
     def _toggle_ratio(value, active):
@@ -505,11 +507,10 @@ def build_preferences(parent, settings):
     page.add(g_size)
 
     # ---------------- Cores ----------------
-    g_colors = Adw.PreferencesGroup(
-        title="Cores",
-        description="Parâmetro colors — pode combinar várias cores",
-    )
-    exp_colors = Adw.ExpanderRow(title="Cores predominantes")
+    # "colors" aceita vários hex separados por vírgula, então as amostras
+    # são multi-seleção e a cor personalizada soma à lista
+    g_colors = Adw.PreferencesGroup(title=t("Colors"))
+    exp_colors = Adw.ExpanderRow(title=t("Dominant colors"))
     selected_colors = set(_csv(settings.get("search.colors")))
 
     def _toggle_color(value, active):
@@ -524,8 +525,9 @@ def build_preferences(parent, settings):
             exp_colors, hexcolor, hexcolor in selected_colors, _toggle_color
         )
 
-    row_custom = Adw.ActionRow(title="Cor personalizada")
-    dialog_button = Gtk.ColorDialogButton(dialog=Gtk.ColorDialog(title="Escolher cor"))
+    row_custom = Adw.ActionRow(title=t("Custom color"))
+    dialog_button = Gtk.ColorDialogButton(
+        dialog=Gtk.ColorDialog(title=t("Choose a color")))
     row_custom.add_suffix(dialog_button)
     exp_colors.add_row(row_custom)
 
@@ -549,11 +551,10 @@ def build_preferences(parent, settings):
     page.add(g_colors)
 
     # ---------------- Chave de API ----------------
-    g_api = Adw.PreferencesGroup(
-        title="Chave de API (opcional)",
-        description="Sem chave o app funciona normalmente, com 45 requisições por "
-                    "minuto. Colar a chave libera NSFW e aumenta o limite.",
-    )
+    # opcional: sem ela o app roda normal (45 requisições/min); com ela
+    # libera NSFW e aumenta o limite. O NSFW fica apagado enquanto não
+    # houver chave — sozinho a API devolve 0 resultados.
+    g_api = Adw.PreferencesGroup(title=t("API key (optional)"))
     key_row = Adw.EntryRow(title="apikey")
     key_row.set_text(settings.get("search.apikey"))
     key_row.connect("changed", lambda e: settings.set("search.apikey", e.get_text()))
@@ -563,32 +564,34 @@ def build_preferences(parent, settings):
         has_key = bool(settings.get("search.apikey").strip())
         check_nsfw.set_sensitive(has_key)
         row_nsfw.set_subtitle(
-            "Ativo — usando sua chave de API"
+            t("Using your API key")
             if has_key else
-            "Requer chave de API do wallhaven.cc"
+            t("Requires a wallhaven.cc API key")
         )
 
     _sync_nsfw()
     page.add(g_api)
 
     # ---------------- Download ----------------
-    g_dl = Adw.PreferencesGroup(title="Download", description="Onde e como salvar")
+    # título de seção é substantivo: "Download" é a MESMA palavra nos
+    # dois idiomas (diferente do botão ⤓, que é o verbo "Baixar")
+    g_dl = Adw.PreferencesGroup(title="Download")
 
-    folder_row = Adw.ActionRow(title="Pasta de destino")
+    folder_row = Adw.ActionRow(title=t("Destination folder"))
     current_folder = settings.get("download.folder")
     folder_row.set_subtitle(current_folder)
-    folder_button = Gtk.Button(label="Escolher…")
+    folder_button = Gtk.Button(label=t("Choose…"))
     folder_button.set_valign(Gtk.Align.CENTER)
     folder_button.add_css_class("pill")
     folder_row.add_suffix(folder_button)
 
     def _pick_folder(_btn):
         fc = Gtk.FileChooserNative(
-            title="Pasta de destino",
+            title=t("Destination folder"),
             transient_for=dialog,
             action=Gtk.FileChooserAction.SELECT_FOLDER,
-            accept_label="Selecionar",
-            cancel_label="Cancelar",
+            accept_label=t("Select"),
+            cancel_label=t("Cancel"),
         )
 
         def _on_response(chooser, response):
@@ -608,17 +611,13 @@ def build_preferences(parent, settings):
     page.add(g_dl)
 
     # ---------------- Cache ----------------
-    g_cache = Adw.PreferencesGroup(
-        title="Cache",
-        description="Só as miniaturas vão para o disco. As imagens completas "
-                    "ficam apenas em memória — nada é recomprimido, então a "
-                    "qualidade original fica intacta.",
-    )
+    # só as miniaturas são gravadas; as imagens completas ficam em RAM
+    # (nada é recomprimido, então a qualidade original fica intacta)
+    g_cache = Adw.PreferencesGroup(title="Cache")
     images = getattr(parent, "images", None)
 
     cache_row = Adw.SpinRow(
-        title="Teto do cache em disco",
-        subtitle="As miniaturas menos usadas saem primeiro ao passar do teto",
+        title=t("Disk cache cap"),
         adjustment=Gtk.Adjustment(
             value=settings.get_int("cache.max-mb", 100),
             lower=10,
@@ -635,8 +634,8 @@ def build_preferences(parent, settings):
     )
     g_cache.add(cache_row)
 
-    usage_row = Adw.ActionRow(title="Em uso agora", subtitle="—")
-    clear_button = Gtk.Button(label="Limpar")
+    usage_row = Adw.ActionRow(title=t("In use now"), subtitle="—")
+    clear_button = Gtk.Button(label=t("Clear"))
     clear_button.set_valign(Gtk.Align.CENTER)
     clear_button.add_css_class("pill")
     usage_row.add_suffix(clear_button)
@@ -651,45 +650,52 @@ def build_preferences(parent, settings):
             return
         removed = images.clear()
         _sync_usage()
-        dialog.add_toast(Adw.Toast.new(f"{removed} arquivo(s) removido do cache"))
+        dialog.add_toast(Adw.Toast.new(
+            t("%s file(s) removed from the cache") % removed))
 
     clear_button.connect("clicked", _clear_cache)
     _sync_usage()
     page.add(g_cache)
 
-    # ---------------- Aparência e janela ----------------
-    g_ui = Adw.PreferencesGroup(title="Aparência e janela")
+    # ---------------- Aparência ----------------
+    g_ui = Adw.PreferencesGroup(title=t("Appearance"))
     g_ui.add(
         _combo_row(
-            "Tema", None,
-            [("default", "Seguir o sistema"), ("light", "Claro"), ("dark", "Escuro")],
+            t("Theme"), None,
+            [("default", t("Follow the system")),
+             ("light", t("Light")),
+             ("dark", t("Dark"))],
             settings.get("appearance.color-scheme"),
             lambda v: settings.set("appearance.color-scheme", v),
         )
     )
-    g_ui.add(
-        _switch_row(
-            "Abrir maximizado", None,
-            settings.get_bool("window.maximized", True),
-            lambda v: settings.set("window.maximized", "true" if v else "false"),
-        )
-    )
-    g_ui.add(
-        _switch_row(
-            "Buscar wallpapers ao iniciar", None,
-            settings.get_bool("behavior.autoload", True),
-            lambda v: settings.set("behavior.autoload", "true" if v else "false"),
-        )
-    )
     page.add(g_ui)
 
-    # ---------------- Restaurar padrões ----------------
-    g_reset = Adw.PreferencesGroup()
-    reset_row = Adw.ActionRow(
-        title="Restaurar padrões",
-        subtitle="Volta todas as opções ao estado inicial",
+    # ---------------- Idioma ----------------
+    # grupo sem título, como o de Restaurar padrões logo abaixo. Os
+    # rótulos ficam em NOMES NATIVOS de propósito ("English (US)"
+    # aparece em inglês dentro do menu em pt-BR): é assim que o usuário
+    # reconhece a opção que quer escolher. A troca vale na hora — o
+    # settings emite "ui.language" e a janela remonta
+    # (window._rebuild_ui); o tray acompanha pelo FileMonitor no
+    # settings.ini (tray._watch_settings_file).
+    g_lang = Adw.PreferencesGroup()
+    g_lang.add(
+        _combo_row(
+            t("Language"), None,
+            [(code, label) for code, label in IDIOMAS],
+            settings.get("ui.language"),
+            lambda v: settings.set("ui.language", v),
+        )
     )
-    reset_button = Gtk.Button(label="Restaurar")
+    page.add(g_lang)
+
+    # ---------------- Restaurar padrões ----------------
+    # grupo sem título: a linha carrega sozinha a ação (mesmo formato
+    # do grupo de idioma logo acima)
+    g_reset = Adw.PreferencesGroup()
+    reset_row = Adw.ActionRow(title=t("Restore defaults"))
+    reset_button = Gtk.Button(label=t("Restore"))
     reset_button.set_valign(Gtk.Align.CENTER)
     reset_button.add_css_class("destructive-action")
     reset_button.add_css_class("pill")
@@ -697,11 +703,11 @@ def build_preferences(parent, settings):
     def _do_reset(_btn):
         confirm = Adw.MessageDialog(
             transient_for=dialog,
-            heading="Restaurar padrões?",
-            body="Todas as configurações voltarão ao valor inicial.",
+            heading=t("Restore defaults?"),
+            body=t("All settings will return to their initial values."),
         )
-        confirm.add_response("cancel", "Cancelar")
-        confirm.add_response("reset", "Restaurar")
+        confirm.add_response("cancel", t("Cancel"))
+        confirm.add_response("reset", t("Restore"))
         confirm.set_response_appearance("reset", Adw.ResponseAppearance.DESTRUCTIVE)
         confirm.set_default_response("cancel")
 

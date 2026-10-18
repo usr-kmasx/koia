@@ -34,6 +34,7 @@ from .background import (  # noqa: E402
     is_current_background,
     restore_previous_background,
 )
+from .i18n import t  # noqa: E402
 from .favorites_view import (  # noqa: E402
     prender_enter_abre,
     prender_fechamento_por_clique_fora,
@@ -95,8 +96,7 @@ def build_downloads_dialog(parent, folder, on_open):
     if not itens:
         dialog.set_child(Adw.StatusPage(
             icon_name="image-x-generic-symbolic",
-            title="Nenhum wallpaper baixado ainda",
-            description=f"Use o ⤓ para baixar imagens para:\n{folder}",
+            title=t("No wallpapers downloaded yet"),
         ))
         prender_enter_abre(dialog, None)
         prender_setas(dialog, None)
@@ -144,7 +144,7 @@ def build_downloads_dialog(parent, folder, on_open):
         btn_trash = Gtk.Button.new_from_icon_name("user-trash-symbolic")
         btn_trash.add_css_class("flat")
         btn_trash.add_css_class("koia-trash")
-        btn_trash.set_tooltip_text("Apagar do disco")
+        btn_trash.set_tooltip_text(t("Delete from disk"))
         btn_trash.set_halign(Gtk.Align.END)
         btn_trash.set_valign(Gtk.Align.START)
         btn_trash.set_margin_top(6)
@@ -233,11 +233,11 @@ def _confirmar_e_apagar(caminho, dialog, cards, flow, toasts):
     """
     nome = os.path.basename(caminho)
     alert = Adw.AlertDialog.new(
-        "Apagar o wallpaper?",
-        f"“{nome}” será apagado permanentemente do disco.",
+        t("Delete the wallpaper?"),
+        t("“%s” will be permanently deleted from disk.") % nome,
     )
-    alert.add_response("cancel", "Cancelar")
-    alert.add_response("delete", "Apagar")
+    alert.add_response("cancel", t("Cancel"))
+    alert.add_response("delete", t("Delete"))
     alert.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
     alert.set_default_response("cancel")
     alert.set_close_response("cancel")
@@ -259,7 +259,7 @@ def _apagar(caminho, cards, flow, toasts):
     try:
         os.remove(caminho)
     except OSError as exc:
-        toasts.add_toast(Adw.Toast.new(f"Não foi possível apagar: {exc}"))
+        toasts.add_toast(Adw.Toast.new(t("Could not delete: %s") % exc))
         return
     card = cards.pop(caminho, None)
     if card is not None:
@@ -268,13 +268,13 @@ def _apagar(caminho, cards, flow, toasts):
             flow.remove(child)
     # mesma conta do fluxo da janela: se era o wallpaper do sistema,
     # volta para o fundo anterior (ou nada, se não há)
-    msg = f"Apagado: {nome}"
+    msg = t("Deleted: %s") % nome
     if era_fundo:
         erro_restore, restaurou = restore_previous_background()
         if restaurou:
-            msg = "Apagado — fundo do sistema restaurado"
+            msg = t("Deleted — system background restored")
         elif erro_restore:
-            msg = f"{erro_restore} · arquivo apagado"
+            msg = t("%s · file deleted") % erro_restore
         else:
-            msg = "Apagado — sem fundo anterior para restaurar"
+            msg = t("Deleted — no previous background to restore")
     toasts.add_toast(Adw.Toast.new(msg))

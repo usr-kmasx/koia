@@ -99,8 +99,8 @@ finally:
     Adw.AlertDialog.present = real_present
 alert = capturado.get("alert")
 assert alert is not None, "clique na lixeira não abriu o alerta"
-assert alert.props.heading == "Apagar o wallpaper?", alert.props.heading
-assert "permanentemente" in alert.props.body, alert.props.body
+assert alert.props.heading == "Delete the wallpaper?", alert.props.heading
+assert "permanently" in alert.props.body, alert.props.body
 assert alert.get_response_appearance("delete") == \
     Adw.ResponseAppearance.DESTRUCTIVE, "Apagar não é destrutivo"
 

@@ -23,6 +23,8 @@ import gi
 gi.require_version("Gio", "2.0")
 from gi.repository import Gio, GLib  # noqa: E402
 
+from .i18n import t  # noqa: E402
+
 # Esquema do papel de parede do GNOME (tema claro e escuro separados)
 BACKGROUND_SCHEMA = "org.gnome.desktop.background"
 
@@ -130,11 +132,11 @@ def is_current_background(path):
 def set_as_background(path, state_path=None):
     """Define ``path`` como papel de parede. Devolve ``None`` ou mensagem."""
     if not path or not os.path.exists(path):
-        return "arquivo do wallpaper não encontrado"
+        return t("wallpaper file not found")
 
     settings = _settings()
     if settings is None:
-        return "este ambiente não suporta aplicar wallpaper (só GNOME)"
+        return t("this environment can't apply a wallpaper (GNOME only)")
 
     try:
         target = GLib.filename_to_uri(os.path.abspath(path), None)
@@ -150,7 +152,7 @@ def set_as_background(path, state_path=None):
         settings.set_string("picture-uri-dark", target)
         settings.apply()
     except GLib.Error as exc:
-        return f"não foi possível aplicar: {exc.message}"
+        return t("could not apply: %s") % exc.message
 
     return None
 
@@ -178,13 +180,13 @@ def restore_previous_background(state_path=None):
 
     settings = _settings()
     if settings is None:
-        return "este ambiente não suporta aplicar wallpaper (só GNOME)", False
+        return t("this environment can't apply a wallpaper (GNOME only)"), False
 
     try:
         settings.set_string("picture-uri", previous)
         settings.set_string("picture-uri-dark", previous)
         settings.apply()
     except GLib.Error as exc:
-        return f"não foi possível restaurar: {exc.message}", False
+        return t("could not restore: %s") % exc.message, False
 
     return None, True

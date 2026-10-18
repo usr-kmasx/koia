@@ -95,7 +95,7 @@ dialog = pv.build_page_dialog(
     lambda p, i: saltos.append((p, i)), fetch_stub, 3)
 
 # --- estrutura inicial: página da janela, foto1 destacada -------------------
-assert dialog.props.title == "Página 1", dialog.props.title
+assert dialog.props.title == "Page 1", dialog.props.title
 flow = flow_do(dialog)
 tiles = cards(flow)
 assert [t.get_tooltip_text() for t in tiles] == ["w0", "w1", "w2"]
@@ -133,7 +133,7 @@ Adw.ToastOverlay.add_toast = \
 # --- › na página 1: tenta 2 → vazia → toast + grade mantida + volta -------
 btn_next.emit("clicked")
 assert buscas == [2], buscas
-assert toasts == ["Página vazia"], toasts
+assert toasts == ["Empty page"], toasts
 assert spin.get_value() == 1, "página vazia deve reverter o campo"
 assert len(cards(flow)) == 3, "página vazia não pode apagar a grade"
 assert btn_prev.get_sensitive(), "controles devem religar após erro"
@@ -141,7 +141,7 @@ assert btn_prev.get_sensitive(), "controles devem religar após erro"
 # --- ‹ na página 1: loop pra última (3) -------------------------------------
 btn_prev.emit("clicked")
 assert buscas == [2, 3], buscas
-assert dialog.props.title == "Página 3"
+assert dialog.props.title == "Page 3"
 assert spin.get_value() == 3
 tiles3 = cards(flow)
 assert [t.get_tooltip_text() for t in tiles3] == ["x0", "x1"]
@@ -156,7 +156,7 @@ assert buscas == [2, 3, 1], buscas
 tiles1 = cards(flow)
 assert [t.get_tooltip_text() for t in tiles1] == ["w0", "w1", "w2"]
 assert tiles1[1].has_css_class("koia-current"), "destaque não voltou"
-assert spin.get_value() == 1 and dialog.props.title == "Página 1"
+assert spin.get_value() == 1 and dialog.props.title == "Page 1"
 
 # --- campo de página: +/− só ajusta o número; Enter busca -------------------
 def teclas_do_campo(w):
@@ -225,7 +225,7 @@ retomar = pv.build_page_dialog(
     lambda p, i: None, fetch_lembrada, 3,
     window_page=1, on_page=vistas.append)
 assert lembradas == [3], "página lembrada não foi buscada"
-assert retomar.props.title == "Página 3"
+assert retomar.props.title == "Page 3"
 assert achar(retomar.get_child(), Gtk.SpinButton).get_value() == 3, \
     "campo não mostra a página lembrada"
 tiles_r = cards(flow_do(retomar))

@@ -13,6 +13,8 @@ import gi
 gi.require_version("Soup", "3.0")
 from gi.repository import GLib, Soup  # noqa: E402
 
+from .i18n import t  # noqa: E402
+
 SEARCH_URL = "https://wallhaven.cc/api/v1/search"
 USER_AGENT = "Koia/1.0 (wallpaper viewer; +https://wallhaven.cc)"
 
@@ -105,22 +107,24 @@ class WallhavenAPI:
         try:
             body = self.session.send_and_read(message, None)
         except GLib.Error as exc:
-            raise APIError(f"Falha de rede: {exc.message}") from exc
+            raise APIError(t("Network failure: %s") % exc.message) from exc
 
         status = message.get_status()
         if status == 429:
-            raise APIError("Limite de requisições atingido (45/min). Aguarde um instante.")
+            raise APIError(t(
+                "Rate limit reached (45/min). Please wait a moment."))
         if status == 401:
-            raise APIError("A chave de API foi recusada pelo wallhaven.cc.")
+            raise APIError(t(
+                "The API key was rejected by wallhaven.cc."))
         if status == 404:
-            raise APIError("Página não encontrada.")
+            raise APIError(t("Page not found."))
         if status != 200:
-            raise APIError(f"O wallhaven.cc respondeu HTTP {status}.")
+            raise APIError(t("wallhaven.cc returned HTTP %s.") % status)
 
         try:
             return json.loads(bytes(body.get_data()).decode("utf-8"))
         except (ValueError, TypeError) as exc:
-            raise APIError("Resposta inválida do servidor.") from exc
+            raise APIError(t("Invalid response from the server.")) from exc
 
 
 def _emit_done(callback, result):
