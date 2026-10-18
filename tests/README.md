@@ -33,6 +33,20 @@ pacote pela própria localização, então podem rodar de qualquer lugar.
   (reconstrói a janela e devolve imagem, página, ▦, tela cheia e
   preferências).
 
+## Instalador (sem tocar no sistema real)
+
+    python3 tests/installer_test.py
+
+- `installer_test` — install.sh/uninstall.sh: a tabela de pacotes das
+  três famílias (apt/dnf/pacman, com shims que registram as chamadas em
+  vez de chamar gerenciador de verdade), a árvore instalada num DESTDIR
+  falso (código, wrapper com shebang+exec, `.desktop` com `Icon=` que
+  existe, PNG no tamanho declarado no diretório), `--dry-run` que não
+  escreve, a bandeja como opcional (ayatana ausente → avisa e o núcleo
+  entra mesmo assim), o smoke check com o runtime de verdade, e o
+  uninstall que some com programa + dados do usuário **sem tocar em
+  `~/Pictures/Wallpapers`** (só avisa) e é idempotente.
+
 ## Tray/bandeja (bus PRIVADO por processo)
 
     python3 -m koia.tray --selftest

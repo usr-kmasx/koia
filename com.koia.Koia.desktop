@@ -3,7 +3,9 @@ Name=Koia
 GenericName=Wallpaper Viewer
 Comment=Explorar wallpapers do wallhaven.cc
 Exec=koia
-Icon=koia
+# o nome do ícone é o id do arquivo (regra do FreeDesktop): o install.sh
+# gera hicolor/<NxN>/apps/com.koia.Koia.png a partir de icon.png
+Icon=com.koia.Koia
 Terminal=false
 Type=Application
 Categories=Graphics;GTK;GNOME;

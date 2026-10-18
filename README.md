@@ -82,15 +82,50 @@ Detalhes:
 
 ## Instalação
 
+Um instalador/desinstalador que detecta a distro e instala tudo
+(dependências, código, atalho e ícone):
+
 ```bash
-install -Dm644 com.koia.Koia.desktop ~/.local/share/applications/com.koia.Koia.desktop
+git clone https://github.com/usr-kmasx/koia
+cd koia
+sudo ./install.sh      # instala em /opt/koia + /usr/bin/koia + ícones
+sudo ./uninstall.sh    # remove o programa E os dados (~/.config/koia, ~/.cache/koia)
 ```
+
+Suporta **Debian/Ubuntu** (apt), **Fedora** (dnf) e **Arch** (pacman) — a
+deteção é pelo `/etc/os-release`. Instala só o que falta (rodar de novo é
+atualização), e `./install.sh --dry-run` mostra tudo que faria sem escrever.
+
+| | Pacotes |
+|---|---|
+| **apt** (Debian 12+, Ubuntu 22.04+) | `python3 python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-soup-3.0 gir1.2-gdkpixbuf-2.0` + bandeja `gir1.2-gtk-3.0 gir1.2-ayatanaappindicator3-0.1` |
+| **dnf** (Fedora) | `python3 python3-gobject gtk4 libadwaita libsoup3 gdk-pixbuf2` + bandeja `gtk3 libayatana-appindicator-gtk3` |
+| **pacman** (Arch) | `python python-gobject gtk4 libadwaita libsoup3 gdk-pixbuf2` + bandeja `gtk3 libayatana-appindicator` |
+
+Detalhes:
+
+- A **bandeja é opcional**: se o pacote ayatana não existir na distro
+  (Fedora < 40), o install avisa e segue — o app GTK4 vive sem ela
+- O `install.sh` confere os imports do runtime antes de copiar qualquer
+  arquivo (`Gtk 4 + libadwaita + libsoup 3`); Python 3.10+ é exigido
+- O `/usr/bin/koia` é um **wrapper** com `exec`, não um symlink: `run.py`
+  usa `os.path.abspath(__file__)`, que não segue symlink e quebraria o import
+- O ícone (`icon.png`, 1254×1254) é **reduzido na hora** para os tamanhos do
+  tema hicolor, via GdkPixbuf — zero dependência extra, sem ImageMagick
+- O `uninstall.sh` para o app e a bandeja antes de apagar (D-Bus `Quit()` +
+  `pkill`, já que o tray não expõe método no bus)
+- **`~/Pictures/Wallpapers` nunca é tocado** — os wallpapers baixados são
+  seus; o desinstalador só avisa que a pasta existe
+
+`python3 run.py` continua funcionando sem instalar nada.
 
 ## Estrutura do projeto
 
 ```
 koia/
 ├── run.py            # ponto de entrada
+├── install.sh        # instalador: deps (apt/dnf/pacman) + código + atalho + ícone
+├── uninstall.sh      # desinstalador: programa + dados (downloads intocados)
 ├── com.koia.Koia.desktop
 ├── icon.png
 ├── tests/            # suíte de regressão (GTK + D-Bus; ver tests/README.md)
