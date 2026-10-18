@@ -67,10 +67,11 @@ class FakeDialog:
 
 
 def fake_build(parent, page, items, index, images, on_jump,
-               fetch, last_page):
+               fetch, last_page, window_page=None, on_page=None):
     chamadas.update(page=page, index=index, n=len(items),
                     on_jump=on_jump, fetch=fetch,
-                    last_page=last_page, parent=parent)
+                    last_page=last_page, parent=parent,
+                    window_page=window_page, on_page=on_page)
     return FakeDialog()
 
 
@@ -84,6 +85,40 @@ assert chamadas["page"] == 1 and chamadas["n"] == 3
 assert chamadas["index"] == win.index and chamadas["present"]
 assert chamadas["fetch"] == win.fetch_page, "fetch_page não repassado"
 assert chamadas["last_page"] == win.last_page == 3
+assert chamadas["window_page"] == win.page == 1, "página da janela não repassada"
+assert callable(chamadas["on_page"]), "sem callback de página do ▦"
+
+# o ▦ lembra a última página vista: reabrir passa essa página como inicial,
+# mas segue informando a página da JANELA (que não se move)
+chamadas["on_page"](2)
+assert win._page_view_page == 2 and win._page_view_window == 1
+W.build_page_dialog = fake_build
+try:
+    chamadas.clear()
+    win.open_page_view()
+finally:
+    W.build_page_dialog = real_build
+assert chamadas["page"] == 2 and chamadas["window_page"] == 1
+
+# a janela CRUZOU de página (setas): a lembrança não vale mais — o ▦ abre
+# na página em que a janela parou e reancora nela (o diálogo real chama
+# on_page ao renderizar; o fake só guarda o callback)
+win.page = 3
+W.build_page_dialog = fake_build
+try:
+    chamadas.clear()
+    win.open_page_view()
+finally:
+    W.build_page_dialog = real_build
+assert chamadas["page"] == 3 and chamadas["window_page"] == 3, \
+    "janela mudou de página: o ▦ deve abrir na página da janela"
+chamadas["on_page"](3)
+assert win._page_view_page == 3 and win._page_view_window == 3, \
+    "o ▦ deve reancorar na página nova da janela"
+
+win.page = 1                # volta ao neutro para o resto do teste
+win._page_view_page = None
+win._page_view_window = None
 
 # salto na MESMA página: troca índice na hora, sem load_page
 real_load = win.load_page

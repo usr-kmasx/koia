@@ -78,6 +78,13 @@ class KoiaWindow(Adw.ApplicationWindow):
         self._pages = OrderedDict()
         self._fingerprint = None
 
+        # última página vista no visor ▦ (não mexe na janela) e a página
+        # da JANELA naquele momento; a lembrança só vale enquanto a
+        # janela segue na mesma página — se ela cruzar de página (setas),
+        # o ▦ reabre onde a janela parou
+        self._page_view_page = None
+        self._page_view_window = None
+
         self._build_ui()
         self._install_actions()
 
@@ -768,12 +775,29 @@ class KoiaWindow(Adw.ApplicationWindow):
         # apagado nesses casos; a guarda aqui é dupla)
         if not self.items or self._fav_context:
             return
+        # o ▦ reabre onde você parou (não a página da janela) — enquanto
+        # a janela não sair da página em que você estava; a página
+        # lembrada é buscada pelo próprio diálogo e a janela só se move
+        # ao clicar numa foto
+        guardada = self._page_view_page \
+            if self._page_view_window == self.page else None
+        page = max(1, min(int(guardada or self.page),
+                          self.last_page or 1))
         dialog = build_page_dialog(
-            self, self.page, self.items, self.index,
+            self, page, self.items, self.index,
             self.images, self.jump_to,
             self.fetch_page, self.last_page,
+            window_page=self.page,
+            on_page=self._remember_page_view,
         )
         dialog.present(self)
+
+    def _remember_page_view(self, page):
+        """Guarda a página exibida no ▦ — sem tocar na janela."""
+        self._page_view_page = page
+        # a página da janela daquele momento: mudando ela, a lembrança
+        # vira papel e o ▦ passa a abrir onde a janela está
+        self._page_view_window = self.page
 
     def jump_to(self, page, index):
         """Salta direto pra uma foto — da página atual ou de outra.

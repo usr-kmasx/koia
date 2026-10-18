@@ -17,11 +17,13 @@ pacote pela própria localização, então podem rodar de qualquer lugar.
 - `downloads_timing_test` — build do diálogo sem decode na thread
   principal + thumbs assíncronas entregues (≤ TILE).
 - `page_view_test` — visor ▦ navegável: destaque da foto da janela,
-  ‹ › em loop, campo de página (pendente até Enter), página vazia
-  (toast + revert), salto (página, índice).
+  ‹ › em loop, campo de página (pendente até o Enter — e já no 1º
+  toque), página vazia (toast + revert), salto (página, índice) e
+  reabertura numa página lembrada (diferente da da janela).
 - `page_button_test` — wiring na janela real: ▦ nasce apagado, ação
   `win.show-page`, sensibilidade por contexto, `fetch_page`
-  cache-first, `jump_to` (mesma página vs. outra).
+  cache-first, `jump_to` (mesma página vs. outra) e a lembrança do ▦
+  (vale só enquanto a janela segue na mesma página).
 
 ## Tray/bandeja (bus PRIVADO por processo)
 

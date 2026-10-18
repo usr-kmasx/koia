@@ -32,20 +32,26 @@ TILE = 180
 
 
 def build_page_dialog(parent, page, items, index, images, on_jump,
-                      fetch, last_page):
+                      fetch, last_page, window_page=None, on_page=None):
     """Monta o ``Adw.Dialog`` com a grade navegável de páginas.
 
-    - ``page``/``items``/``index``: página que a janela está mostrando
-      (abre nela; a foto ``index`` é a destacada).
+    - ``page``/``items``/``index``: página que abre e, quando é a mesma
+      da janela, a foto ``index`` destacada.
     - ``images``: ``ImageLoader`` da janela — reusa o cache.
     - ``on_jump``: chamado com ``(page, index)`` da foto escolhida; a
       janela salta pra ela e o diálogo se fecha.
     - ``fetch``: ``(page, on_done, on_error)`` — busca página SEM trocar
       o que a janela mostra (cache primeiro, rede depois).
     - ``last_page``: total de páginas conhecido.
+    - ``window_page``: página que a JANELA mostra (destaque e validade
+      dos ``items``); ``None`` assume ``page``.
+    - ``on_page``: chamado com a página exibida a cada troca — é o que
+      deixa o ▦ lembrar onde parou.
     """
     last_page = max(1, int(last_page or 1))
     page = max(1, min(int(page), last_page))
+    window_page = page if window_page is None else \
+        max(1, min(int(window_page), last_page))
 
     dialog = Adw.Dialog(
         title=f"Página {page}",
@@ -59,7 +65,7 @@ def build_page_dialog(parent, page, items, index, images, on_jump,
         "last": last_page,
         # página/foto da JANELA principal — o destaque koia-current só
         # existe quando a grade está mostrando exatamente ela
-        "janela_page": page,
+        "janela_page": window_page,
         "janela_index": max(0, min(int(index), len(items) - 1)) if items else 0,
         "busy": False,
         "on_jump": on_jump,
@@ -94,6 +100,7 @@ def build_page_dialog(parent, page, items, index, images, on_jump,
     btn_next.set_tooltip_text("Página seguinte")
     btn_next.add_css_class("flat")
     spin = Gtk.SpinButton.new_with_range(1, last_page, 1)
+    spin.set_value(page)   # nasce na página exibida (senão fica no mínimo 1)
     spin.set_tooltip_text("Ir para a página — digite o número e Enter")
     spin.set_width_chars(4)
     rodape = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -145,6 +152,8 @@ def build_page_dialog(parent, page, items, index, images, on_jump,
         dialog.set_title(f"Página {pagina}")
         estado["busy"] = False
         controles(True)
+        if on_page is not None:
+            on_page(pagina)
 
     def errou(erro):
         toasts.add_toast(Adw.Toast.new(
@@ -213,9 +222,34 @@ def build_page_dialog(parent, page, items, index, images, on_jump,
     def ir_campo(campo):
         campo.update()               # commita o texto digitado, se houver
         ir_para(int(campo.get_value()))
-    spin.connect("activate", ir_campo)
 
-    renderizar(page, items)
+    def _enter_no_campo(_controlador, keyval, _keycode, _mods):
+        if keyval not in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
+            return False
+        ir_campo(spin)
+        return True
+
+    spin.connect("activate", ir_campo)
+    # o Enter que commita o texto digitado NÃO emite "activate" (o sinal
+    # só sai no Enter seguinte), então o número digitado só valeria no 2º
+    # Enter. Em CAPTURE a tecla chega antes do commit — vale já no 1º.
+    teclas_campo = Gtk.EventControllerKey()
+    teclas_campo.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+    teclas_campo.connect("key-pressed", _enter_no_campo)
+    spin.add_controller(teclas_campo)
+
+    if page == estado["janela_page"]:
+        # os ``items`` são os da janela: mesma página, sem rede
+        renderizar(page, items)
+        if on_page is not None:
+            on_page(page)
+    else:
+        # página lembrada (diferente da janela): não há itens prontos —
+        # busca (cache primeiro, rede depois) mostrando o spinner
+        controles(False)
+        fetch(page,
+              on_done=lambda resultado, p=page: chegou(p, resultado),
+              on_error=errou)
     prender_enter_abre(dialog, flow)
     prender_setas(dialog, flow)
     return dialog

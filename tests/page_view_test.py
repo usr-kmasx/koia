@@ -16,8 +16,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
+gi.require_version("Gdk", "4.0")
 gi.require_version("GdkPixbuf", "2.0")
-from gi.repository import Adw, GdkPixbuf, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, GdkPixbuf, GLib, Gtk  # noqa: E402
 
 Gtk.init()
 Adw.init()
@@ -158,14 +159,31 @@ assert tiles1[1].has_css_class("koia-current"), "destaque não voltou"
 assert spin.get_value() == 1 and dialog.props.title == "Página 1"
 
 # --- campo de página: +/− só ajusta o número; Enter busca -------------------
+def teclas_do_campo(w):
+    modelo = w.observe_controllers()
+    for i in range(modelo.get_n_items()):
+        c = modelo.get_item(i)
+        if isinstance(c, Gtk.EventControllerKey):
+            return c
+    return None
+
+
 antes = list(buscas)
 spin.set_value(3)                       # como clicar nos +/− do campo
 assert buscas == antes, "+/− buscou de imediato (tem que esperar Enter)"
 assert spin.get_value() == 3
-spin.emit("activate")                   # Enter
+teclas = teclas_do_campo(spin)
+assert teclas is not None, "campo sem controlador de teclado"
+# outra tecla passa reto (devolve False) e não busca
+assert teclas.emit("key-pressed", Gdk.KEY_a, 0, 0) is False
+assert buscas == antes, "tecla comum não pode buscar"
+# Enter pega o número JÁ no 1º toque (a camada de tecla, não o sinal
+# "activate", que só sairia no Enter seguinte)
+assert teclas.emit("key-pressed", Gdk.KEY_Return, 0, 0) is True
 assert buscas == antes + [3], "Enter não pulou"
 assert spin.get_value() == 3 and len(cards(flow)) == 2
-spin.emit("activate")                   # Enter sem mudança de número
+# Enter de novo, com o mesmo número: nada a buscar
+assert teclas.emit("key-pressed", Gdk.KEY_Return, 0, 0) is True
 assert buscas == antes + [3], "Enter com o mesmo número buscou"
 
 # --- clique: pula com (página, índice); foto atual só fecha -----------------
@@ -188,5 +206,33 @@ for t in cards(flow):
 
 Adw.ToastOverlay.add_toast = real_add
 assert ".koia-current" in CSS, "CSS sem .koia-current"
+
+# --- retomar: abrir numa página lembrada (!= página da janela) --------------
+# o ▦ lembra a página que estava vendo: ao reabrir, ela é BUSCADA (os itens
+# da janela não servem), o destaque fica preso à página da janela e o
+# callback on_page registra a página exibida.
+lembradas = []
+vistas = []
+
+
+def fetch_lembrada(page, on_done, on_error):
+    lembradas.append(page)
+    on_done(paginas[page])
+
+
+retomar = pv.build_page_dialog(
+    None, 3, paginas[1]["data"], 1, images,
+    lambda p, i: None, fetch_lembrada, 3,
+    window_page=1, on_page=vistas.append)
+assert lembradas == [3], "página lembrada não foi buscada"
+assert retomar.props.title == "Página 3"
+assert achar(retomar.get_child(), Gtk.SpinButton).get_value() == 3, \
+    "campo não mostra a página lembrada"
+tiles_r = cards(flow_do(retomar))
+assert [t.get_tooltip_text() for t in tiles_r] == ["x0", "x1"], \
+    "página lembrada deve ser buscada, não reusar os itens da janela"
+assert not [t for t in tiles_r if t.has_css_class("koia-current")], \
+    "página diferente da janela não tem foto atual"
+assert vistas == [3], vistas
 
 print("[koia-page] visor navegável: ok")
