@@ -10,6 +10,12 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# teto de mmap ANTES de qualquer import do app: os blocos grandes de
+# decode precisam nascer fora dos arenas do glibc (ver o módulo)
+from koia.malloc_tune import instalar  # noqa: E402
+
+instalar()
+
 if "--tray" in sys.argv[1:]:
     from koia.tray import main as tray_main
     sys.exit(tray_main())

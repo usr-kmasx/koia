@@ -47,6 +47,17 @@ pacote pela própria localização, então podem rodar de qualquer lugar.
   uninstall que some com programa + dados do usuário **sem tocar em
   `~/Pictures/Wallpapers`** (só avisa) e é idempotente.
 
+## Alocador (puro, sem GUI)
+
+    python3 tests/malloc_tune_test.py
+
+- `malloc_tune_test` — `koia/malloc_tune.py`: o `mallopt` do glibc é
+  aplicado (e é idempotente), o `run.py` chama o ajuste antes de
+  importar app/tray, e decodes simultâneos com os tamanhos reais de
+  imagem não deixam memória retida no processo (a regressão do RSS
+  que subia a cada visualização e nunca descia: blocos grandes presos
+  nos arenas por thread do glibc, sem `munmap`).
+
 ## Tray/bandeja (bus PRIVADO por processo)
 
     python3 -m koia.tray --selftest
