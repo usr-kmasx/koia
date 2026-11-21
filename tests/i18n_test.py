@@ -220,6 +220,36 @@ def teste_painel():
         # grupo com título — e fecha o painel
         linhas = [w.get_title() for w in preorder(dialogo)
                   if isinstance(w, Adw.PreferencesRow)]
+
+        # Uma opção não pode receber foco duas vezes: ActionRow e
+        # checkbox/botão de sufixo eram ambos focalizáveis.
+        # O libadwaita cria ActionRows internas para os cabeçalhos
+        # dos ExpanderRows; elas devem manter o foco para expandir.
+        cabecalhos = {
+            t("Exact resolutions"), t("Aspect ratios"), t("Dominant colors"),
+        }
+        action_rows = [w for w in preorder(dialogo)
+                       if type(w) is Adw.ActionRow
+                       and w.get_title() not in cabecalhos]
+        assert action_rows, "nenhuma ActionRow encontrada no painel"
+        for row in action_rows:
+            assert not row.get_focusable(), (
+                f"linha {row.get_title()!r} duplica o foco do controle"
+            )
+        checks = [w for w in preorder(dialogo)
+                  if isinstance(w, Gtk.CheckButton)]
+        assert checks and all(c.get_focusable() for c in checks), (
+            "caixas devem continuar focalizáveis pelo teclado"
+        )
+        for w in preorder(dialogo):
+            if isinstance(w, (Adw.ComboRow, Adw.ExpanderRow)):
+                # Toplist period só entra no Tab quando sorting=toplist.
+                expected = (settings.get("search.sorting") == "toplist"
+                            if w.get_title() == t("Toplist period") else True)
+                assert w.get_focusable() == expected, (
+                    f"foco incorreto em {w.get_title()!r}"
+                )
+
         for esperado in (t("Theme"), t("Language"), titulo_reset):
             assert esperado in linhas, f"{esperado!r} ausente em {idioma}"
 
@@ -249,6 +279,38 @@ def teste_painel():
         esperado = "Relevância" if idioma == "pt-BR" else "Relevance"
         assert esperado in rotulos, \
             f"tabela de sorting não traduziu em {idioma}: {rotulos}"
+
+        # Direction -> Toplist period: a opção desativada não deve ser
+        # parada do Tab, mas deve voltar quando sorting=toplist.
+        toplist = next(w for w in preorder(dialogo)
+                       if isinstance(w, Adw.ComboRow)
+                       and w.get_title() == t("Toplist period"))
+        direction = next(w for w in preorder(dialogo)
+                         if isinstance(w, Adw.ComboRow)
+                         and w.get_title() == t("Direction"))
+        next_row = next(w for w in preorder(dialogo)
+                        if isinstance(w, Adw.ComboRow)
+                        and w.get_title() == t("Minimum resolution"))
+        assert direction.get_focusable() and next_row.get_focusable()
+        idx_toplist = next(i for i, (value, _label) in enumerate(config.SORTINGS)
+                           if value == "toplist")
+        assert toplist.get_sensitive() and toplist.get_focusable()
+        linha_ordem.set_selected(0)  # relevance: desabilita Toplist period
+        assert not toplist.get_sensitive() and not toplist.get_focusable()
+        dialogo.set_focus(direction)
+        dialogo.set_focus(toplist)
+        assert dialogo.get_focus() is not toplist, (
+            "Toplist period desabilitado ainda recebeu foco"
+        )
+        linha_ordem.set_selected(idx_toplist)
+        assert toplist.get_sensitive() and toplist.get_focusable()
+        linha_ordem.set_selected(1)  # random: desabilita outra vez
+        assert not toplist.get_sensitive() and not toplist.get_focusable()
+        settings.set("search.sorting", "toplist")  # atualização externa do Settings
+        assert toplist.get_sensitive() and toplist.get_focusable()
+        settings.set("search.sorting", "random")
+        assert not toplist.get_sensitive() and not toplist.get_focusable()
+        assert next_row.get_focusable(), "próxima opção saiu da ordem do Tab"
 
         # fecha sem apresentar: descarta os widgets deste laço
         dialogo.close()
@@ -334,7 +396,7 @@ def teste_rebuild():
     assert win.page == 1 and len(win.items) == 3
 
     assert win.btn_fav.get_tooltip_text() == "Favorite"
-    assert win.btn_page_header.get_sensitive(), "o ▦ precisaria da página"
+    assert win.btn_page.get_sensitive(), "o ▦ precisaria da página"
 
     # diálogo aberto durante a troca: precisa fechar E reabrir traduzido
     win.open_preferences()
@@ -347,7 +409,7 @@ def teste_rebuild():
     assert win.btn_fs.get_tooltip_text() == "Tela cheia  ·  F"
     assert win.btn_dl.get_tooltip_text() == "Baixar"
     assert (win.page, len(win.items)) == (1, 3), "estado de navegação sumiu"
-    assert win.btn_page_header.get_sensitive(), "sensibilidade do ▦ sumiu"
+    assert win.btn_page.get_sensitive(), "sensibilidade do ▦ sumiu"
     assert win.prefs_dialog is not None and win.prefs_dialog is not dialogo_velho, \
         "preferências ficaram no idioma antigo"
 

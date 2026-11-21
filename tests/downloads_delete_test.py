@@ -75,6 +75,8 @@ assert len(cards(flow)) == 2, f"esperava 2 cards, veio {len(cards(flow))}"
 # estrutura: FlowBoxChild -> Overlay[tile Button | lixeira Button]
 card0 = cards(flow)[0].get_child()
 assert isinstance(card0, Gtk.Overlay), "card não é Gtk.Overlay"
+assert all(not child.get_focusable() for child in cards(flow)), \
+    "FlowBoxChild não pode duplicar o foco dos botões das fotos"
 tile = card0.get_first_child()
 assert isinstance(tile, Gtk.Button), "tile não é Gtk.Button (contrato)"
 assert tile.get_tooltip_text() in ("a.png", "b.png"), tile.get_tooltip_text()

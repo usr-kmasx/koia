@@ -98,6 +98,10 @@ dialog = pv.build_page_dialog(
 assert dialog.props.title == "Page 1", dialog.props.title
 flow = flow_do(dialog)
 tiles = cards(flow)
+assert all(not t.get_parent().get_focusable() for t in tiles), \
+    "FlowBoxChild não pode criar segunda parada de foco por imagem"
+assert all(t.get_focusable() for t in tiles), \
+    "botões das fotos precisam continuar focalizáveis"
 assert [t.get_tooltip_text() for t in tiles] == ["w0", "w1", "w2"]
 atuais = [t for t in tiles if t.has_css_class("koia-current")]
 assert atuais == [tiles[1]], "koia-current deve marcar SÓ a foto atual"

@@ -1,6 +1,6 @@
 """Visor de página — grade navegável das páginas de resultados.
 
-Aberto pelo ícone de grade da HeaderBar (▦), mostra uma página inteira
+Aberto pelo ícone de grade da barra inferior (▦), mostra uma página inteira
 de resultados com a foto que está na janela principal destacada
 (``koia-current``) e o foco nela. O rodapé navega: ‹ › passam página a
 página (em loop) e o campo de página salta direto pro número digitado —
@@ -192,6 +192,8 @@ def build_page_dialog(parent, page, items, index, images, on_jump,
                 lambda _tile, p=pagina, pos=i: escolher(p, pos),
             )
             flow.append(tile)
+            # Só o botão representa a foto no percurso de foco.
+            tile.get_parent().set_focusable(False)
 
             images.load(
                 wallpaper["thumbs"]["large"],

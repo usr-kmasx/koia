@@ -34,7 +34,7 @@ win = W.KoiaWindow(app, Settings(path=os.path.join(tmp, "settings.ini")))
 # nada no cache real do usuário
 win.images = ImageLoader(os.path.join(tmp, "cache"))
 
-btn = win.btn_page_header
+btn = win.btn_page
 assert not btn.get_sensitive(), "botão deve nascer apagado"
 assert win.lookup_action("show-page") is not None, "ação win.show-page ausente"
 

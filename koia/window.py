@@ -8,7 +8,7 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from .api import WallhavenAPI, build_query  # noqa: E402
 from .background import (  # noqa: E402
@@ -25,8 +25,10 @@ from .i18n import num, set_idioma, t  # noqa: E402
 from .image import FULL_SCALE, THUMB_SCALE, ImageLoader  # noqa: E402
 from .page_view import build_page_dialog  # noqa: E402
 
-HIDE_CONTROLS_AFTER_MS = 2500
+CONTROLS_HIDE_AFTER_MS = 5000
+CONTROLS_ANIMATION_MS = 250
 FULL_SWAP_DELAY_MS = 250
+FILTER_SEARCH_DELAY_MS = 2000
 
 # Quantas páginas já buscadas ficam guardadas em memória. Guardar é o que
 # permite voltar para a página anterior **com as mesmas imagens** e entrando
@@ -63,6 +65,8 @@ class KoiaWindow(Adw.ApplicationWindow):
         self.total = 0
         self._gen = 0            # invalida callbacks de imagens antigas
         self._busy = False
+        self._filter_search_source = 0
+        self._reload_queued = False
         self._dl_busy = False
         # arquivo aplicado como papel de parede nesta sessão (None = nenhum)
         self._applied_path = None
@@ -70,10 +74,9 @@ class KoiaWindow(Adw.ApplicationWindow):
         # para a busca anterior, que segue em cache)
         self._fav_context = False
         self._return_to = None
-        self._hovered = False
-        self._pointer = None     # últimas coordenadas do mouse vistas
-        self._hide_source = 0
         self._fullscreen = False
+        # Visibilidade temporária da barra, independente do foco do GTK.
+        self._controls_hide_source = 0
 
         # páginas já buscadas nesta sessão, na ordem em que foram pedidas
         self._pages = OrderedDict()
@@ -92,6 +95,15 @@ class KoiaWindow(Adw.ApplicationWindow):
 
         self._build_ui()
         self._install_actions()
+
+        # Tab/Shift+Tab e hover na área inferior têm controle separado;
+        # o movimento fora do painel nunca influencia a visibilidade.
+        keyboard = Gtk.EventControllerKey()
+        keyboard.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        keyboard.connect("key-pressed", self._on_controls_key_pressed)
+        self.add_controller(keyboard)
+        self._controls_keyboard = keyboard
+        self._arm_controls_hide_timer()
 
         # abre maximizada — comportamento fixo, sem opção de desligar
         self.maximize()
@@ -120,6 +132,10 @@ class KoiaWindow(Adw.ApplicationWindow):
     # UI
     # ------------------------------------------------------------------
     def _build_ui(self):
+        # Ao reconstruir a interface por mudança de idioma, o temporizador
+        # antigo não pode recolher a nova barra antecipadamente.
+        self._cancel_controls_hide_timer()
+
         # ---- palco com a imagem -------------------------------------
         self.picture = Gtk.Picture(content_fit=Gtk.ContentFit.CONTAIN)
         self.picture.set_can_target(False)
@@ -158,13 +174,32 @@ class KoiaWindow(Adw.ApplicationWindow):
             "video-display-symbolic", t("Apply wallpaper"),
             "win.apply-wallpaper")
 
-        for button in (self.btn_prev, self.btn_next, self.btn_fav,
-                       self.btn_dl, self.btn_fs, self.btn_apply):
+        # Os quatro antigos ícones da barra de título vêm depois dos
+        # seis controles originais, na mesma ordem visual (esq. -> dir.).
+        # _icon_button aplica o mesmo tamanho, formato e estilo a todos.
+        self.btn_downloads = self._icon_button(
+            "image-x-generic-symbolic", "Downloads", "win.show-downloads")
+        self.btn_favorites = self._icon_button(
+            "koia-heart-symbolic", t("Favorites"), "win.show-favorites")
+        self.btn_page = self._icon_button(
+            "view-grid-symbolic", t("View the page"), "win.show-page")
+        self.btn_settings = self._icon_button(
+            "preferences-system-symbolic", t("Settings  ·  Ctrl+,"),
+            "win.preferences")
+
+        self._control_buttons = (
+            self.btn_prev, self.btn_next, self.btn_fav,
+            self.btn_dl, self.btn_fs, self.btn_apply,
+            self.btn_downloads, self.btn_favorites,
+            self.btn_page, self.btn_settings,
+        )
+        for button in self._control_buttons:
             bar.append(button)
 
+        # A mesma animação serve para revelar por Tab ou pelo mouse.
         self.revealer = Gtk.Revealer(
             transition_type=Gtk.RevealerTransitionType.SLIDE_UP,
-            transition_duration=220,
+            transition_duration=CONTROLS_ANIMATION_MS,
             halign=Gtk.Align.START,
             valign=Gtk.Align.END,
         )
@@ -172,65 +207,108 @@ class KoiaWindow(Adw.ApplicationWindow):
         self.revealer.set_margin_end(18)
         self.revealer.set_margin_bottom(18)
         self.revealer.set_child(bar)
-        overlay.add_overlay(self.revealer)
+        self.revealer.set_reveal_child(True)
 
-        # o ponteiro reaparece os controles; ficam visíveis enquanto o
-        # mouse estiver sobre a barra
-        motion = Gtk.EventControllerMotion()
-        motion.connect("motion", self._on_motion)
-        motion.connect("enter", self._on_pointer_enter)
-        overlay.add_controller(motion)
+        # Área de hover estável, exatamente na região da barra inferior.
+        # O Gtk.Revealer encolhe quando oculto; um molde transparente
+        # mantém essa região detectável SEM instalar motion na tela toda.
+        # Como o controlador pertence ao pai, permanece ativo também
+        # quando o ponteiro passa para os botões revelados.
+        panel_zone = Gtk.Overlay(halign=Gtk.Align.START,
+                                 valign=Gtk.Align.END)
+        hit_area = Gtk.Box(spacing=6)
+        hit_area.add_css_class("koia-controls")
+        hit_area.set_margin_start(36)  # 18 da barra + 18 do revealer
+        hit_area.set_margin_end(36)
+        hit_area.set_margin_top(10)
+        hit_area.set_margin_bottom(36)
+        for button in self._control_buttons:
+            # Cópia apenas para medição: respeita o tamanho natural
+            # real de Gtk.Button no tema, sem receber clique nem Tab.
+            placeholder = Gtk.Button.new_from_icon_name(button.get_icon_name())
+            placeholder.add_css_class("flat")
+            placeholder.add_css_class("koia-control")
+            placeholder.set_can_target(False)
+            placeholder.set_focusable(False)
+            hit_area.append(placeholder)
+        hit_area.set_opacity(0)
+        panel_zone.set_child(hit_area)
+        panel_zone.add_overlay(self.revealer)
+        overlay.add_overlay(panel_zone)
+        self._panel_hover_zone = panel_zone
 
-        hover = Gtk.EventControllerMotion()
-        hover.connect("enter", self._on_bar_enter)
-        hover.connect("leave", self._on_bar_leave)
-        bar.add_controller(hover)
+        panel_motion = Gtk.EventControllerMotion()
+        panel_motion.connect("enter", self._on_panel_pointer_enter)
+        panel_motion.connect("leave", self._on_panel_pointer_leave)
+        panel_zone.add_controller(panel_motion)
+        self._panel_motion = panel_motion
 
         # ---- chrome Adwaita ------------------------------------------
         toolbar = Adw.ToolbarView()
         header = Adw.HeaderBar()
         header.set_title_widget(Adw.WindowTitle.new("Koia", ""))
 
-        # aqui ficam downloads, favoritos, visor de página e config
-        # (ordem visual da direita para a esquerda: [🖼][❤][▦][⚙]). O
-        # pack_end empacota da direita para a esquerda (igual ao GTK3),
-        # então a ordem de empacotamento é a inversa da visual
-        config_button = Gtk.Button.new_from_icon_name(
-            "preferences-system-symbolic")
-        config_button.set_tooltip_text(t("Settings  ·  Ctrl+,"))
-        config_button.set_action_name("win.preferences")
-        config_button.add_css_class("flat")
-        header.pack_end(config_button)
-
-        page_button = Gtk.Button.new_from_icon_name("view-grid-symbolic")
-        page_button.set_tooltip_text(t("View the page"))
-        page_button.set_action_name("win.show-page")
-        page_button.add_css_class("flat")
-        header.pack_end(page_button)
-
-        fav_button = Gtk.Button.new_from_icon_name("koia-heart-symbolic")
-        fav_button.set_tooltip_text(t("Favorites"))
-        fav_button.set_action_name("win.show-favorites")
-        fav_button.add_css_class("flat")
-        header.pack_end(fav_button)
-
-        downloads_button = Gtk.Button.new_from_icon_name(
-            "image-x-generic-symbolic")
-        downloads_button.set_tooltip_text("Downloads")
-        downloads_button.set_action_name("win.show-downloads")
-        downloads_button.add_css_class("flat")
-        header.pack_end(downloads_button)
-
-        self.btn_fav_header = fav_button
-        self.btn_page_header = page_button
-        self.btn_downloads_header = downloads_button
-        self.config_button = config_button
+        # Ícones utilitários agora ficam no fim da barra inferior.
         toolbar.add_top_bar(header)
         toolbar.set_content(overlay)
 
         self.header = header
         self.toast_overlay = Adw.ToastOverlay(child=toolbar)
         self.set_content(self.toast_overlay)
+        if getattr(self, "_controls_keyboard", None) is not None:
+            self._arm_controls_hide_timer()
+
+    def _cancel_controls_hide_timer(self):
+        if self._controls_hide_source:
+            GLib.source_remove(self._controls_hide_source)
+            self._controls_hide_source = 0
+
+    def _arm_controls_hide_timer(self):
+        self._cancel_controls_hide_timer()
+        self._controls_hide_source = GLib.timeout_add(
+            CONTROLS_HIDE_AFTER_MS, self._hide_controls
+        )
+
+    def _hide_controls(self):
+        self._controls_hide_source = 0
+        # O mouse só sustenta o painel dentro de sua região inferior.
+        # O foco do teclado não entra nessa decisão.
+        if self._panel_motion.contains_pointer():
+            return GLib.SOURCE_REMOVE
+        # O foco (borda ao redor do ícone) não sustenta a visibilidade.
+        # Soltar o foco antes de recolher evita ficar preso em um botão
+        # que já não pode ser alcançado visualmente pelo Tab.
+        if self.get_focus() in self._control_buttons:
+            self.set_focus(None)
+        self.revealer.set_reveal_child(False)
+        return GLib.SOURCE_REMOVE
+
+    def _on_panel_pointer_enter(self, _controller, _x, _y):
+        self.revealer.set_reveal_child(True)
+        self._cancel_controls_hide_timer()
+
+    def _on_panel_pointer_leave(self, _controller):
+        self._arm_controls_hide_timer()
+
+    def _on_controls_key_pressed(self, _controller, keyval, _keycode, mods):
+        if keyval not in (Gdk.KEY_Tab, Gdk.KEY_KP_Tab, Gdk.KEY_ISO_Left_Tab):
+            return False
+        backward = (keyval == Gdk.KEY_ISO_Left_Tab
+                    or bool(mods & Gdk.ModifierType.SHIFT_MASK))
+        was_hidden = not self.revealer.get_reveal_child()
+        self.revealer.set_reveal_child(True)
+        self._arm_controls_hide_timer()
+        if was_hidden:
+            # A barra recolhida não participa da travessia normal do GTK.
+            # O primeiro Tab a revela e foca o botão correto sem saltos.
+            candidates = reversed(self._control_buttons) if backward else self._control_buttons
+            for button in candidates:
+                if button.get_sensitive() and button.get_focusable():
+                    button.grab_focus()
+                    break
+            return True
+        # Visível: deixar o GTK percorrer naturalmente os dez ícones.
+        return False
 
     def _icon_button(self, icon_name, tooltip, action_name):
         button = Gtk.Button.new_from_icon_name(icon_name)
@@ -347,8 +425,12 @@ class KoiaWindow(Adw.ApplicationWindow):
             # idioma está ativo antes de remontar (cobre o reset também)
             set_idioma(self.settings.get("ui.language"))
             self._rebuild_ui()
-        elif key.startswith("search."):
+        elif key == "search.q":
+            # O termo só muda quando o usuário confirma com Enter.
             self.reload()
+        elif key.startswith("search."):
+            # Marcações/filtros: espere 2 s após a última alteração.
+            self._schedule_filter_reload()
         elif key == "download.folder":
             self._refresh_download_badge()
             self._refresh_apply_badge()
@@ -360,7 +442,29 @@ class KoiaWindow(Adw.ApplicationWindow):
     # ------------------------------------------------------------------
     # Busca e navegação
     # ------------------------------------------------------------------
+    def _cancel_filter_reload(self):
+        if self._filter_search_source:
+            GLib.source_remove(self._filter_search_source)
+            self._filter_search_source = 0
+
+    def _schedule_filter_reload(self):
+        self._cancel_filter_reload()
+        self._filter_search_source = GLib.timeout_add(
+            FILTER_SEARCH_DELAY_MS, self._apply_filter_reload
+        )
+
+    def _apply_filter_reload(self):
+        self._filter_search_source = 0
+        self.reload()
+        return GLib.SOURCE_REMOVE
+
     def reload(self):
+        self._cancel_filter_reload()
+        if self._busy:
+            # Não descarte a pesquisa nova enquanto a API responde à velha.
+            self._reload_queued = True
+            return
+        self._reload_queued = False
         self.load_page(1, index=0)
 
     def _query_fingerprint(self):
@@ -403,6 +507,10 @@ class KoiaWindow(Adw.ApplicationWindow):
 
     def _on_page(self, result, index):
         self._busy = False
+        if self._reload_queued:
+            # A resposta antiga não deve substituir a pesquisa mais nova.
+            self.reload()
+            return
         meta = result.get("meta", {}) or {}
         self.items = result.get("data", []) or []
         self.page = int(meta.get("current_page", 1) or 1)
@@ -444,6 +552,9 @@ class KoiaWindow(Adw.ApplicationWindow):
 
     def _on_error(self, error):
         self._busy = False
+        if self._reload_queued:
+            self.reload()
+            return
         self._set_loading(False)
         self.picture.set_paintable(None)
         self.toast(getattr(error, "message", str(error)))
@@ -512,7 +623,6 @@ class KoiaWindow(Adw.ApplicationWindow):
         self._refresh_apply_badge()
         self._refresh_fav_badge()
         self._prefetch_next()
-        self._show_controls()
 
     def _schedule_full(self, url, gen):
         if gen != self._gen:
@@ -545,66 +655,6 @@ class KoiaWindow(Adw.ApplicationWindow):
         # Adw.Spinner anima sozinho enquanto visível (libadwaita >= 1.6)
         self.spinner.set_opacity(1.0 if loading else 0.0)
         self.spinner.set_visible(loading)
-
-    # ------------------------------------------------------------------
-    # Controles flutuantes
-    # ------------------------------------------------------------------
-    def _on_motion(self, _controller, x, y):
-        # O GTK sintetiza eventos "motion" quando um widget aparece ou
-        # sai de baixo do ponteiro PARADO — e esses eventos repetem as
-        # exatas coordenadas. Sem esse filtro, a barra reabria no
-        # instante de fechar, e a própria animação de reabrir gerava
-        # outro motion sintético: loop infinito de aparecer/desaparecer.
-        if self._pointer == (x, y):
-            return
-        self._pointer = (x, y)
-
-        # o mouse se moveu: o usuário está ativo. Se a barra já está
-        # visível, só renovo o temporizador — tocar no reveal_child
-        # reiniciaria a animação a cada evento e faria a barra tremer.
-        if self.revealer.get_reveal_child():
-            self._arm_hide_timer()
-        else:
-            self._show_controls()
-
-    def _on_pointer_enter(self, *_args):
-        # o ponteiro acabou de entrar na janela: contar como atividade,
-        # mesmo que venha parar no mesmo pixel de onde saiu.
-        self._pointer = None
-        self._show_controls()
-
-    def _show_controls(self):
-        if not self.revealer.get_reveal_child():
-            self.revealer.set_reveal_child(True)
-        self._arm_hide_timer()
-
-    def _arm_hide_timer(self):
-        if self._hide_source:
-            GLib.source_remove(self._hide_source)
-        self._hide_source = GLib.timeout_add(
-            HIDE_CONTROLS_AFTER_MS, self._hide_controls
-        )
-
-    def _hide_controls(self):
-        self._hide_source = 0
-        if self._hovered:
-            # mouse sobre a barra: mantém visível. O "leave" rearma o
-            # temporizador, então não há risco de a barra sumir "presa".
-            return False
-        self.revealer.set_reveal_child(False)
-        return False
-
-    def _on_bar_enter(self, *_args):
-        self._hovered = True
-        self.revealer.set_reveal_child(True)
-        self._arm_hide_timer()
-
-    def _on_bar_leave(self, *_args):
-        # importante: NÃO reexibir aqui. A barra só desliza para baixo
-        # quando o ponteiro a deixa, e reexibir gerava um loop infinito
-        # de animação aparecer/desaparecer.
-        self._hovered = False
-        self._arm_hide_timer()
 
     # ------------------------------------------------------------------
     # Download
@@ -812,19 +862,20 @@ class KoiaWindow(Adw.ApplicationWindow):
         return favorited
 
     def open_favorites(self):
-        """Abre o diálogo de favoritos (coração da HeaderBar)."""
+        """Abre o diálogo de favoritos (botão na barra inferior)."""
         dialog = build_favorites_dialog(
-            self, self.favorites, self.images, self.show_wallpaper)
+            self, self.favorites, self.images, self.show_wallpaper,
+            on_remove=self._refresh_fav_badge)
         dialog.present(self)
 
     def open_downloads(self):
-        """Abre o diálogo dos wallpapers já baixados (🖼 da HeaderBar)."""
+        """Abre o diálogo de arquivos baixados (barra inferior)."""
         dialog = build_downloads_dialog(
             self, self.settings.get("download.folder"), self.show_wallpaper)
         dialog.present(self)
 
     def open_page_view(self):
-        """Abre o visor da página inteira (▦ da HeaderBar)."""
+        """Abre o visor de página (▦ da barra inferior)."""
         # página inteira só existe na navegação normal — favorito e
         # download são "página" de um item só (o botão já nasce
         # apagado nesses casos; a guarda aqui é dupla)
@@ -881,7 +932,7 @@ class KoiaWindow(Adw.ApplicationWindow):
 
     def _sync_page_button(self):
         """O ▦ só faz sentido com página inteira carregada."""
-        self.btn_page_header.set_sensitive(
+        self.btn_page.set_sensitive(
             bool(self.items) and not self._fav_context
         )
 

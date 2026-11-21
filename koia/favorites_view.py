@@ -20,13 +20,15 @@ from .image import THUMB_SCALE  # noqa: E402
 TILE = 180
 
 
-def build_favorites_dialog(parent, favorites, images, on_open):
+def build_favorites_dialog(parent, favorites, images, on_open, on_remove=None):
     """Monta o ``Adw.Dialog`` com a grade de favoritos.
 
     - ``favorites``: ``FavoritesStore`` (lido na hora da construção).
     - ``images``: ``ImageLoader`` da janela principal — reusa o cache.
     - ``on_open``: chamado com o wallpaper escolhido; a janela principal
       abre ele e o diálogo se fecha.
+    - ``on_remove``: callback opcional para atualizar o coração da janela
+      principal depois de desfavoritar, sem fechar o diálogo.
     """
     dialog = Adw.Dialog(
         title=t("Favorites"),
@@ -74,7 +76,28 @@ def build_favorites_dialog(parent, favorites, images, on_open):
             "clicked",
             lambda _tile, wp=wallpaper: _open_tile(wp, dialog, on_open),
         )
-        flow.append(tile)
+        # Mesmo Overlay e posição da lixeira em Downloads: coração e
+        # imagem são botões independentes, cada um com sua área de clique.
+        heart = Gtk.Button.new_from_icon_name("koia-heart-filled-symbolic")
+        heart.add_css_class("flat")
+        heart.add_css_class("koia-fav")
+        heart.set_tooltip_text(t("Remove from favorites"))
+        heart.set_halign(Gtk.Align.END)
+        heart.set_valign(Gtk.Align.START)
+        heart.set_margin_top(6)
+        heart.set_margin_end(6)
+        card = Gtk.Overlay()
+        card.set_child(tile)
+        card.add_overlay(heart)
+        heart.connect(
+            "clicked",
+            lambda _heart, wp=wallpaper, c=card: _remove_favorite(
+                wp, c, flow, dialog, favorites, on_remove
+            ),
+        )
+        flow.append(card)
+        # A moldura do FlowBox não vira uma segunda seleção do card.
+        card.get_parent().set_focusable(False)
 
         images.load(
             wallpaper["thumbs"]["large"],
@@ -101,6 +124,30 @@ def build_favorites_dialog(parent, favorites, images, on_open):
 def _open_tile(wallpaper, dialog, on_open):
     on_open(wallpaper)
     dialog.close()
+
+
+def _remove_favorite(wallpaper, card, flow, dialog, favorites, on_remove):
+    """Desfavorita e retira só este card, sem abrir/apagar o wallpaper."""
+    child = card.get_parent()  # FlowBoxChild
+    if child is None:
+        return
+
+    # O próximo card recebe foco; no fim da lista, o anterior.
+    neighbor = child.get_next_sibling() or child.get_prev_sibling()
+    favorites.remove(wallpaper["id"])
+    flow.remove(child)
+    if on_remove is not None:
+        on_remove()
+
+    if neighbor is None:
+        dialog.set_child(Adw.StatusPage(
+            icon_name="koia-heart-symbolic",
+            title=t("No favorites yet"),
+        ))
+    else:
+        next_tile = _botao_card(neighbor)
+        dialog.props.focus_widget = next_tile
+        next_tile.grab_focus()
 
 
 def prender_fechamento_por_clique_fora(dialog):
@@ -184,7 +231,10 @@ def _card_focado(dialog, flow):
     raiz = dialog.get_root()
     foco = raiz.get_focus() if raiz is not None else dialog.props.focus_widget
     for cartao in _cartoes(flow):
-        if cartao is foco:
+        if cartao is foco or (isinstance(foco, Gtk.Button)
+                              and foco.get_parent() is cartao.get_parent()):
+            # A seta a partir do coração avança em relação à foto
+            # correspondente (o coração não vira uma coluna extra).
             return cartao
     return None
 
@@ -192,9 +242,9 @@ def _card_focado(dialog, flow):
 def _botao_card(flow_child):
     """O botão-card de dentro de um filho do FlowBox.
 
-    Nos favoritos o filho É o botão; na grade de downloads é um
-    ``Gtk.Overlay`` (botão-card por baixo, lixeira por cima) — em
-    ambos resolve ao botão que abre a imagem.
+    Nos favoritos e downloads o filho é um ``Gtk.Overlay``: botão
+    da imagem por baixo e coração/lixeira por cima. Também aceita o
+    botão direto, para os outros diálogos que usam este helper.
     """
     filho = flow_child.get_child()
     if isinstance(filho, Gtk.Overlay):

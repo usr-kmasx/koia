@@ -1,7 +1,7 @@
 """Carregamento e cache de imagens.
 
 Exibição em duas etapas: a *thumbnail* aparece quase que instantaneamente
-e, meio segundo depois, a imagem completa a substitui quando termina de
+e, após um atraso curto (250 ms), a imagem completa a substitui quando termina de
 baixar.
 
 O que vai para onde:
@@ -30,6 +30,8 @@ gi.require_version("Gdk", "4.0")
 gi.require_version("Soup", "3.0")
 gi.require_version("GdkPixbuf", "2.0")
 from gi.repository import Gdk, GdkPixbuf, GLib, Soup  # noqa: E402
+
+from . import __version__  # noqa: E402
 
 # Lado maior máximo que vai para a textura (evita texturas gigantes)
 THUMB_SCALE = 1600
@@ -150,7 +152,7 @@ class ImageLoader:
         os.makedirs(self.thumb_dir, exist_ok=True)
         self.session = session or Soup.Session.new()
         self.session.set_timeout(60)
-        self.session.set_user_agent("Koia/1.0 (wallpaper viewer)")
+        self.session.set_user_agent(f"Koia/{__version__} (wallpaper viewer)")
         self.max_bytes = max_bytes
 
         self._threads = []

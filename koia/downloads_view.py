@@ -160,6 +160,8 @@ def build_downloads_dialog(parent, folder, on_open):
 
         cards[caminho] = card
         flow.append(card)
+        # Evita foco duplicado no contêiner e no botão da mesma foto.
+        card.get_parent().set_focusable(False)
 
     scrolled = Gtk.ScrolledWindow()
     scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)

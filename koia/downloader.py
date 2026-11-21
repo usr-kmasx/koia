@@ -9,6 +9,8 @@ import gi
 gi.require_version("Soup", "3.0")
 from gi.repository import GLib, Soup  # noqa: E402
 
+from . import __version__  # noqa: E402
+
 from .i18n import t  # noqa: E402
 
 _CHUNK = 64 * 1024
@@ -29,7 +31,7 @@ class Downloader:
     def __init__(self, session=None):
         self.session = session or Soup.Session.new()
         self.session.set_timeout(120)
-        self.session.set_user_agent("Koia/1.0 (wallpaper viewer)")
+        self.session.set_user_agent(f"Koia/{__version__} (wallpaper viewer)")
         self._active = set()
         self._lock = threading.Lock()
 

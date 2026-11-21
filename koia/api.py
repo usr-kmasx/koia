@@ -13,10 +13,11 @@ import gi
 gi.require_version("Soup", "3.0")
 from gi.repository import GLib, Soup  # noqa: E402
 
+from . import __version__  # noqa: E402
 from .i18n import t  # noqa: E402
 
 SEARCH_URL = "https://wallhaven.cc/api/v1/search"
-USER_AGENT = "Koia/1.0 (wallpaper viewer; +https://wallhaven.cc)"
+USER_AGENT = f"Koia/{__version__} (wallpaper viewer; +https://wallhaven.cc)"
 
 
 class APIError(Exception):

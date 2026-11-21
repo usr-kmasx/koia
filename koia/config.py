@@ -229,6 +229,17 @@ COLORS = [
 # Helpers de UI
 # ---------------------------------------------------------------------------
 
+def _focus_only_control(row):
+    """Uma opção deve ter uma só parada de foco.
+
+    Adw.ActionRow e o controle de sufixo são focalizáveis por padrão:
+    isso duplica o foco de cada checkbox/botão na navegação por teclado.
+    Se a linha tiver set_activatable_widget, o clique continua ativando
+    o controle. O teclado percorre apenas o controle interativo.
+    """
+    row.set_focusable(False)
+
+
 def _combo_row(title, subtitle, options, current, on_change):
     """options: lista de (valor, rótulo)."""
     row = Adw.ComboRow(title=title)
@@ -256,6 +267,7 @@ def _check_row(parent_group, expander, title, selected, on_toggle):
     check = Gtk.CheckButton(active=selected)
     row.add_suffix(check)
     row.set_activatable_widget(check)
+    _focus_only_control(row)
     check.connect("toggled", lambda c: on_toggle(title, c.get_active()))
     expander.add_row(row)
     return row
@@ -281,6 +293,7 @@ def _swatch_row(expander, hexcolor, selected, on_toggle):
     row.add_prefix(swatch)
     row.add_suffix(check)
     row.set_activatable_widget(check)
+    _focus_only_control(row)
     check.connect("toggled", lambda c: on_toggle(hexcolor, c.get_active()))
     expander.add_row(row)
     return row
@@ -339,6 +352,7 @@ def _bitmask_group(settings, key, specs, group, keep=None, force=0):
             row.set_subtitle(subtitle)
         row.add_suffix(check)
         row.set_activatable_widget(check)
+        _focus_only_control(row)
         group.add(row)
 
         def on_toggled(_check, idx=index):
@@ -403,10 +417,16 @@ def build_preferences(parent, settings):
     g_search = Adw.PreferencesGroup(title=t("Search"))
     entry = Adw.EntryRow(title=t("Search term"))
     entry.set_text(settings.get("search.q"))
-    entry.connect(
-        "changed",
-        lambda e: settings.set("search.q", e.get_text()),
-    )
+    # Digitar não grava nem dispara busca: só o Enter confirma o termo.
+    # Se o texto já for igual ao salvo, Enter ainda permite recarregar.
+    def _search_on_enter(row):
+        value = row.get_text()
+        if value != settings.get("search.q"):
+            settings.set("search.q", value)
+        elif callable(getattr(parent, "reload", None)):
+            parent.reload()
+
+    entry.connect("entry-activated", _search_on_enter)
     g_search.add(entry)
 
     cat_checks, cat_rows, sync_categories = _bitmask_group(
@@ -463,7 +483,10 @@ def build_preferences(parent, settings):
     g_sort.add(row_toprange)
 
     def _sync_toprange():
-        row_toprange.set_sensitive(settings.get("search.sorting") == "toplist")
+        enabled = settings.get("search.sorting") == "toplist"
+        row_toprange.set_sensitive(enabled)
+        # Desabilitar visualmente não deve deixar uma parada de Tab.
+        row_toprange.set_focusable(enabled)
 
     _sync_toprange()
     page.add(g_sort)
@@ -529,6 +552,7 @@ def build_preferences(parent, settings):
     dialog_button = Gtk.ColorDialogButton(
         dialog=Gtk.ColorDialog(title=t("Choose a color")))
     row_custom.add_suffix(dialog_button)
+    _focus_only_control(row_custom)
     exp_colors.add_row(row_custom)
 
     def _on_custom_color(button, _pspec):
@@ -584,6 +608,7 @@ def build_preferences(parent, settings):
     folder_button.set_valign(Gtk.Align.CENTER)
     folder_button.add_css_class("pill")
     folder_row.add_suffix(folder_button)
+    _focus_only_control(folder_row)
 
     def _pick_folder(_btn):
         fc = Gtk.FileChooserNative(
@@ -639,6 +664,7 @@ def build_preferences(parent, settings):
     clear_button.set_valign(Gtk.Align.CENTER)
     clear_button.add_css_class("pill")
     usage_row.add_suffix(clear_button)
+    _focus_only_control(usage_row)
     g_cache.add(usage_row)
 
     def _sync_usage(*_args):
@@ -722,6 +748,7 @@ def build_preferences(parent, settings):
     reset_button.connect("clicked", _do_reset)
     reset_row.add_suffix(reset_button)
     reset_row.set_activatable_widget(reset_button)
+    _focus_only_control(reset_row)
     g_reset.add(reset_row)
     page.add(g_reset)
 
@@ -734,6 +761,8 @@ def build_preferences(parent, settings):
             sync_purity()
         if key == "search.apikey":
             _sync_nsfw()
+        elif key == "search.sorting":
+            _sync_toprange()
 
     settings.connect(_on_settings_changed)
 
