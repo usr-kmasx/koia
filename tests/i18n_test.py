@@ -213,8 +213,14 @@ def teste_painel():
     ):
         settings = config.Settings(path=os.path.join(tmp, f"s-{idioma}.ini"))
         set_idioma(idioma)
-        # transient_for nunca é mostrado: build_preferences não apresenta
-        dialogo = config.build_preferences(Gtk.Window(), settings)
+        # Adw.PreferencesDialog monta a árvore ao ser apresentado ao host.
+        # A janela-pai continua não mapeada: nenhum teste abre janelas.
+        parent = Adw.ApplicationWindow(application=app)
+        dialogo = config.build_preferences(parent, settings)
+        assert isinstance(dialogo, Adw.PreferencesDialog)
+        assert dialogo.get_search_enabled()
+        assert (dialogo.get_content_width(), dialogo.get_content_height()) == (620, 680)
+        dialogo.present(parent)
 
         # o idioma é uma LINHA (formato do "Restaurar padrões"), não um
         # grupo com título — e fecha o painel
@@ -298,10 +304,12 @@ def teste_painel():
         linha_ordem.set_selected(0)  # relevance: desabilita Toplist period
         assert not toplist.get_sensitive() and not toplist.get_focusable()
         dialogo.set_focus(direction)
-        dialogo.set_focus(toplist)
-        assert dialogo.get_focus() is not toplist, (
+        # set_focus() força programaticamente o alvo, mesmo desabilitado;
+        # o GTK usa grab_focus() na navegação normal do usuário.
+        assert not toplist.grab_focus(), (
             "Toplist period desabilitado ainda recebeu foco"
         )
+        assert dialogo.get_focus() is not toplist
         linha_ordem.set_selected(idx_toplist)
         assert toplist.get_sensitive() and toplist.get_focusable()
         linha_ordem.set_selected(1)  # random: desabilita outra vez
@@ -404,14 +412,29 @@ def teste_rebuild():
     assert dialogo_velho is not None
 
     win.settings.set("ui.language", "pt-BR")
+    # O novo diálogo espera o fechamento completo antes de remontar a UI.
+    for _ in range(60):
+        if not win._prefs_rebuild_pending:
+            break
+        assert GLib.MainContext.default().pending(), "rebuild pendente sem callback"
+        GLib.MainContext.default().iteration(False)
+    assert not win._prefs_rebuild_pending, "rebuild aguardou sem terminar"
 
     assert win.btn_fav.get_tooltip_text() == "Favoritar", "janela não remontou"
     assert win.btn_fs.get_tooltip_text() == "Tela cheia  ·  F"
     assert win.btn_dl.get_tooltip_text() == "Baixar"
     assert (win.page, len(win.items)) == (1, 3), "estado de navegação sumiu"
     assert win.btn_page.get_sensitive(), "sensibilidade do ▦ sumiu"
+    # O novo Adw.Dialog reabre via GLib.idle_add após o sinal "closed".
+    for _ in range(40):
+        if win.prefs_dialog is not None and win.prefs_dialog is not dialogo_velho:
+            break
+        if not GLib.MainContext.default().pending():
+            break
+        GLib.MainContext.default().iteration(False)
     assert win.prefs_dialog is not None and win.prefs_dialog is not dialogo_velho, \
         "preferências ficaram no idioma antigo"
+    assert isinstance(win.prefs_dialog, Adw.PreferencesDialog)
 
     # tela cheia é estado da JANELA, não do widget: precisa sobreviver
     win.prefs_dialog.close()

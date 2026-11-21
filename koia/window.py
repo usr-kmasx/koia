@@ -92,6 +92,7 @@ class KoiaWindow(Adw.ApplicationWindow):
         # diálogo de preferências aberto (o rebuild de idioma fecha e
         # reabre ele, porque ele nasceu com os textos do idioma anterior)
         self.prefs_dialog = None
+        self._prefs_rebuild_pending = False
 
         self._build_ui()
         self._install_actions()
@@ -155,8 +156,8 @@ class KoiaWindow(Adw.ApplicationWindow):
         bar = Gtk.Box(spacing=6)
         bar.set_margin_start(18)
         bar.set_margin_end(18)
-        bar.set_margin_top(10)
-        bar.set_margin_bottom(18)
+        bar.set_margin_top(18)
+        bar.set_margin_bottom(10)
         bar.add_css_class("koia-controls")
 
         self.btn_prev = self._icon_button(
@@ -180,7 +181,7 @@ class KoiaWindow(Adw.ApplicationWindow):
         self.btn_downloads = self._icon_button(
             "image-x-generic-symbolic", "Downloads", "win.show-downloads")
         self.btn_favorites = self._icon_button(
-            "koia-heart-symbolic", t("Favorites"), "win.show-favorites")
+            "koia-bookmark-symbolic", t("Favorites"), "win.show-favorites")
         self.btn_page = self._icon_button(
             "view-grid-symbolic", t("View the page"), "win.show-page")
         self.btn_settings = self._icon_button(
@@ -198,30 +199,30 @@ class KoiaWindow(Adw.ApplicationWindow):
 
         # A mesma animação serve para revelar por Tab ou pelo mouse.
         self.revealer = Gtk.Revealer(
-            transition_type=Gtk.RevealerTransitionType.SLIDE_UP,
+            transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
             transition_duration=CONTROLS_ANIMATION_MS,
-            halign=Gtk.Align.START,
-            valign=Gtk.Align.END,
+            halign=Gtk.Align.CENTER,
+            valign=Gtk.Align.START,
         )
         self.revealer.set_margin_start(18)
         self.revealer.set_margin_end(18)
-        self.revealer.set_margin_bottom(18)
+        self.revealer.set_margin_top(18)
         self.revealer.set_child(bar)
         self.revealer.set_reveal_child(True)
 
-        # Área de hover estável, exatamente na região da barra inferior.
+        # Área de hover estável, exatamente na região da barra superior.
         # O Gtk.Revealer encolhe quando oculto; um molde transparente
         # mantém essa região detectável SEM instalar motion na tela toda.
         # Como o controlador pertence ao pai, permanece ativo também
         # quando o ponteiro passa para os botões revelados.
-        panel_zone = Gtk.Overlay(halign=Gtk.Align.START,
-                                 valign=Gtk.Align.END)
+        panel_zone = Gtk.Overlay(halign=Gtk.Align.CENTER,
+                                 valign=Gtk.Align.START)
         hit_area = Gtk.Box(spacing=6)
         hit_area.add_css_class("koia-controls")
         hit_area.set_margin_start(36)  # 18 da barra + 18 do revealer
         hit_area.set_margin_end(36)
-        hit_area.set_margin_top(10)
-        hit_area.set_margin_bottom(36)
+        hit_area.set_margin_top(36)
+        hit_area.set_margin_bottom(10)
         for button in self._control_buttons:
             # Cópia apenas para medição: respeita o tamanho natural
             # real de Gtk.Button no tema, sem receber clique nem Tab.
@@ -271,7 +272,7 @@ class KoiaWindow(Adw.ApplicationWindow):
 
     def _hide_controls(self):
         self._controls_hide_source = 0
-        # O mouse só sustenta o painel dentro de sua região inferior.
+        # O mouse só sustenta o painel dentro de sua região superior.
         # O foco do teclado não entra nessa decisão.
         if self._panel_motion.contains_pointer():
             return GLib.SOURCE_REMOVE
@@ -319,30 +320,40 @@ class KoiaWindow(Adw.ApplicationWindow):
         return button
 
     def _rebuild_ui(self):
-        """Troca de idioma: refaz a árvore de widgets no idioma novo.
+        """Recria a UI traduzida e mantém o contexto da imagem atual.
 
-        O GTK não troca rótulos em runtime, então a única saída limpa é
-        reconstruir (``set_content`` novo, o antigo é desreferenciado).
-        Depois devolve o que a árvore nova não sabe sozinha: o estado de
-        tela cheia, a sensibilidade do ▦, a imagem em exibição e os
-        badges — todos vivem em ``self``, não nos widgets.
+        Um Adw.Dialog fica hospedado dentro da árvore da janela. Se houver
+        preferências abertas, esperamos o sinal "closed" *antes* de trocar
+        a árvore; destruí-la durante a animação cancelaria o fechamento.
         """
-        fullscreen = self._fullscreen
-        reabrir_prefs = self.prefs_dialog is not None
-        if reabrir_prefs:
-            # a janela vai nascer nova; a referência antiga morre junto
+        if self._prefs_rebuild_pending:
+            return  # usa o idioma mais recente ao concluir o fechamento
+        if self.prefs_dialog is not None:
             antigo, self.prefs_dialog = self.prefs_dialog, None
+            self._prefs_rebuild_pending = True
+            antigo.connect("closed", self._on_preferences_closed_for_rebuild)
             antigo.close()
+            return
+        self._rebuild_main_view()
 
+    def _rebuild_main_view(self):
+        fullscreen = self._fullscreen
         self._build_ui()
-
         if fullscreen:
             self._sync_fullscreen_ui()
         self._sync_page_button()
         if self.items:
             self.show_current()
-        if reabrir_prefs:
+
+    def _on_preferences_closed_for_rebuild(self, _dialog):
+        GLib.idle_add(self._reopen_preferences_after_rebuild)
+
+    def _reopen_preferences_after_rebuild(self):
+        self._prefs_rebuild_pending = False
+        self._rebuild_main_view()
+        if self.prefs_dialog is None:
             self.open_preferences()
+        return GLib.SOURCE_REMOVE
 
     # ------------------------------------------------------------------
     # Ações e atalhos
@@ -403,18 +414,19 @@ class KoiaWindow(Adw.ApplicationWindow):
             else t("Fullscreen  ·  F"))
 
     def open_preferences(self):
+        if self._prefs_rebuild_pending:
+            return  # o diálogo traduzido será aberto após "closed"
+        if self.prefs_dialog is not None:
+            return  # evita empilhar o mesmo painel ao acionar o atalho
         dialog = build_preferences(self, self.settings)
         self.prefs_dialog = dialog
 
-        def _closed(_dialog, *_args):
-            # fecha-req do GTK4 não é destroy: dá para confiar em
-            # fechar a referência por aqui (o config já soltou os listeners)
+        def _closed(_dialog):
             if self.prefs_dialog is dialog:
                 self.prefs_dialog = None
-            return False
 
-        dialog.connect("close-request", _closed)
-        dialog.present()
+        dialog.connect("closed", _closed)
+        dialog.present(self)
 
     # ------------------------------------------------------------------
     # Preferências

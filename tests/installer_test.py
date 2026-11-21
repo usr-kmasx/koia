@@ -267,7 +267,8 @@ def testar_install(mundo, raiz):
 
         # --- árvore de código
         for arquivo in ("run.py", "icon.png", "koia/main.py", "koia/i18n.py",
-                        "koia/data/icons/koia-heart-symbolic.svg"):
+                        "koia/data/icons/koia-heart-symbolic.svg",
+                        "koia/data/icons/koia-bookmark-symbolic.svg"):
             assert os.path.isfile(os.path.join(dest, "opt/koia", arquivo)), \
                 f"{arquivo} não instalado em {pm}"
         copia = os.path.join(dest, "opt/koia")
@@ -370,7 +371,11 @@ def testar_smoke_check(mundo, raiz):
     if probe.returncode == 0:
         assert saida.returncode == 0, saida.stderr + saida.stdout
         assert os.path.isfile(os.path.join(dest, "opt/koia/run.py"))
-        print("[installer] smoke check com o runtime real ok")
+        import gi
+        gi.require_version("Adw", "1")
+        from gi.repository import Adw
+        assert hasattr(Adw, "PreferencesDialog") and hasattr(Adw, "AlertDialog")
+        print("[installer] smoke check com libadwaita 1.5+ e runtime real ok")
     else:
         # sem runtime o install tem de ABORTAR antes de copiar arquivo
         assert saida.returncode != 0, "sem runtime o install não podia seguir"

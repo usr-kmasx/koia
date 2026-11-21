@@ -7,12 +7,12 @@ páginas, manter favoritos locais, baixar arquivos e aplicar wallpapers no GNOME
 
 ## Novidades da versão 2.0.0
 
-- **Barra inferior unificada:** dez botões com o mesmo visual, incluindo os
-  quatro antigos controles do cabeçalho (Downloads, Favoritos, Visor de página
-  e Configurações).
+- **Painel superior centralizado:** dez botões com o mesmo visual, incluindo
+  os quatro antigos controles do cabeçalho (Downloads, Favoritos, Visor de
+  página e Configurações). O painel desliza para cima ao desaparecer.
 - **Exibição por teclado e mouse:** Tab/Shift+Tab revelam a barra; o mouse
   revela e mantém o painel aberto **somente ao entrar na área dos botões**.
-  Fora dessa área, a barra se recolhe após 5 segundos, com animação de 250 ms.
+  Fora dessa área, o painel se recolhe após 5 segundos, com animação de 250 ms.
   O foco de teclado, sozinho, não impede a ocultação.
 - **Pesquisa mais previsível:** texto de busca só é enviado ao pressionar
   **Enter**. Alterações dos filtros aguardam 2 segundos de inatividade antes
@@ -20,6 +20,11 @@ páginas, manter favoritos locais, baixar arquivos e aplicar wallpapers no GNOME
   mais recente é processada após sua conclusão.
 - **Favoritos:** coração diretamente em cada imagem para remover o favorito
   sem abrir ou apagar o arquivo; atualização imediata da grade e do indicador.
+  O **marcador (bookmark)** abre a coleção de favoritos; o coração da barra
+  adiciona ou remove somente a imagem atual.
+- **Configurações integradas:** `Adw.PreferencesDialog` no lugar da janela
+  separada; clique no fundo escurecido ou pressione Esc para fechar.
+  Restaurar padrões utiliza uma confirmação `Adw.AlertDialog`.
 - **Navegação e acessibilidade:** correções de foco duplicado em grades e
   controles de preferências. **Toplist period** é ignorado pelo Tab quando a
   ordenação selecionada não é Toplist.
@@ -47,7 +52,7 @@ Consulte [CHANGELOG.md](CHANGELOG.md) para o histórico desta versão.
 > conteúdo restrito conforme as permissões da conta. Ela é salva localmente
 > nas preferências; **não** sincroniza os favoritos locais com a conta.
 
-## Barra inferior e navegação
+## Painel superior e navegação
 
 A ordem dos botões, da esquerda para a direita, é:
 
@@ -64,25 +69,28 @@ A ordem dos botões, da esquerda para a direita, é:
 | 9 | Abrir Visor de página |
 | 10 | Abrir Configurações |
 
-O cabeçalho continua com o título e os controles de janela, mas os quatro
-atalhos de galeria/preferências ficam **no fim da barra inferior**.
+O cabeçalho continua com o título e os controles da janela, mas os quatro
+atalhos de galeria/preferências ficam **no fim do painel superior centralizado**.
+O botão de favoritar a imagem usa um coração; o botão de **abrir a coleção**
+usa um marcador, para diferenciar as ações.
 
 - **Tab** revela o painel e percorre os controles; **Shift+Tab** permite
   percorrê-los no sentido inverso.
 - Mover o mouse por qualquer outra parte da janela **não ativa** o painel.
-  O hover fica restrito ao espaço da barra, inclusive quando ela está
-  recolhida. Enquanto o ponteiro estiver nessa área, a barra fica visível.
-- Ao deixar a área, a contagem de **5 s** recomeça; a animação de
-  entrada/saída dura **250 ms**.
-- O foco em um botão não mantém a barra aberta indefinidamente. Ao recolher,
+  O hover fica restrito à região do painel no alto da galeria, inclusive
+  quando está recolhido. Enquanto o ponteiro estiver ali, ele fica visível.
+- Ao deixar a área, a contagem de **5 s** recomeça. A animação de **250 ms**
+  revela descendo e recolhe para cima.
+- O foco em um botão não mantém o painel aberto indefinidamente. Ao recolher,
   o foco dos controles ocultos é liberado.
 
 ### Configurações e pesquisa
 
-O painel de **Configurações** continua sendo uma janela modal
-`Adw.PreferencesWindow`. As galerias de **Favoritos**, **Downloads** e
-**Visor de página** usam `Adw.Dialog`. A migração do painel de preferências
-para `Adw.PreferencesDialog` **não faz parte** desta versão.
+**Configurações** é um `Adw.PreferencesDialog`, apresentado sobre a galeria
+como os demais diálogos (`Adw.Dialog`) de **Favoritos**, **Downloads** e
+**Visor de página**. Clique fora da caixa, no fundo escurecido, ou use **Esc**
+para fechar; cliques nos controles internos não fecham o painel. Restaurar
+padrões exige uma confirmação integrada `Adw.AlertDialog`.
 
 Na configuração de ordenação, **Toplist period** só fica disponível e entra
 na navegação por Tab quando **Sort by = Toplist**. Em outros modos, o foco
@@ -92,7 +100,9 @@ os demais filtros aplicam-se automaticamente após a pausa de 2 segundos.
 ## Requisitos
 
 - Linux, Python **3.10+**, PyGObject
-- GTK 4, libadwaita, libsoup 3 e GdkPixbuf
+- GTK 4, **libadwaita 1.5+** (para `Adw.PreferencesDialog`), libsoup 3
+  e GdkPixbuf. Distros com libadwaita mais antiga precisam atualizar essa
+  dependência; apenas instalar GTK 4 não é suficiente.
 - Para a bandeja: GTK 3 e libayatana-appindicator3; no GNOME, uma extensão
   compatível com AppIndicator/StatusNotifierItem pode ser necessária
 
@@ -161,6 +171,7 @@ Execute os testes GTK sem apresentar as janelas:
 ```bash
 GSETTINGS_BACKEND=memory python3 tests/tab_revealer_test.py
 GSETTINGS_BACKEND=memory python3 tests/search_input_test.py
+GSETTINGS_BACKEND=memory python3 tests/preferences_dialog_test.py
 GSETTINGS_BACKEND=memory python3 tests/favorites_remove_test.py
 GSETTINGS_BACKEND=memory python3 tests/downloads_delete_test.py
 GSETTINGS_BACKEND=memory python3 tests/page_view_test.py
@@ -187,7 +198,7 @@ koia/
 └── koia/
     ├── __init__.py      # versão do aplicativo
     ├── main.py          # inicialização e estilo
-    ├── window.py        # galeria, barra inferior e navegação
+    ├── window.py        # galeria, painel superior e navegação
     ├── config.py        # configurações, foco e persistência
     ├── api.py           # API Wallhaven
     ├── downloader.py    # downloads de imagens

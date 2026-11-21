@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Painel de dez botões: Tab/Shift+Tab e hover restrito à barra inferior.
+"""Painel no topo central: Tab/Shift+Tab, hover restrito e animação.
 
 Testes GTK sem apresentar janela ou acessar rede.
 """
@@ -55,10 +55,20 @@ def check_layout():
         'win.show-downloads', 'win.show-favorites',
         'win.show-page', 'win.preferences'
     ]
+    # Coração = ação de favoritar foto; marcador = abrir coleção.
+    assert win.btn_fav.get_icon_name() == 'koia-heart-symbolic'
+    assert win.btn_favorites.get_icon_name() == 'koia-bookmark-symbolic'
+    assert win.btn_favorites.get_tooltip_text() == 'Favorites'
+
     panel_zone = win._panel_hover_zone
     assert win.revealer.get_parent() is panel_zone
-    assert panel_zone.get_halign() == Gtk.Align.START
-    assert panel_zone.get_valign() == Gtk.Align.END
+    assert panel_zone.get_halign() == Gtk.Align.CENTER
+    assert panel_zone.get_valign() == Gtk.Align.START
+    assert win.revealer.get_halign() == Gtk.Align.CENTER
+    assert win.revealer.get_valign() == Gtk.Align.START
+    assert win.revealer.get_margin_top() == 18
+    assert win.revealer.get_margin_bottom() == 0
+    assert bar.get_margin_top() == 18 and bar.get_margin_bottom() == 10
     motion = [c for c in controllers(panel_zone)
               if isinstance(c, Gtk.EventControllerMotion)]
     assert motion == [win._panel_motion], 'hover não está restrito ao painel'
@@ -72,7 +82,8 @@ def check_layout():
     assert hitbox.get_opacity() == 0
     assert hitbox.get_margin_start() == 36
     assert hitbox.get_margin_end() == 36
-    assert hitbox.get_margin_bottom() == 36
+    assert hitbox.get_margin_top() == 36
+    assert hitbox.get_margin_bottom() == 10
     placeholders = []
     child = hitbox.get_first_child()
     while child is not None:
@@ -87,7 +98,8 @@ def check_layout():
                and not child.get_focusable()
                for child, button in zip(placeholders, expected))
     assert all(b.get_can_target() for b in expected)
-    assert win.revealer.get_transition_type() == Gtk.RevealerTransitionType.SLIDE_UP
+    # SLIDE_DOWN revela descendo e recolhe o painel para cima.
+    assert win.revealer.get_transition_type() == Gtk.RevealerTransitionType.SLIDE_DOWN
     assert win.revealer.get_transition_duration() == 250
     assert CONTROLS_HIDE_AFTER_MS == 5000
 
@@ -139,7 +151,7 @@ assert win._controls_keyboard.emit('key-pressed', Gdk.KEY_a, 0,
 assert not win.revealer.get_reveal_child()
 assert not win._controls_hide_source
 
-# Hover só sobre a barra inferior: entra, revela, cancela contagem,
+# Hover só sobre a barra superior: entra, revela, cancela contagem,
 # permanece aberta mesmo após 5 s, sai e retoma a contagem.
 class PointerStub:
     def __init__(self, inside=False):

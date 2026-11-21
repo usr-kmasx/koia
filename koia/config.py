@@ -14,6 +14,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
 from . import paths  # noqa: E402
+from .favorites_view import prender_fechamento_por_clique_fora  # noqa: E402
 from .i18n import IDIOMAS, decimal, set_idioma, t  # noqa: E402
 
 
@@ -398,15 +399,16 @@ def _human(size):
 # ---------------------------------------------------------------------------
 
 def build_preferences(parent, settings):
-    """Monta e retorna o ``Adw.PreferencesWindow`` já conectado ao Settings."""
-    dialog = Adw.PreferencesWindow(
-        transient_for=parent,
-        modal=True,
+    """Monta um ``Adw.PreferencesDialog`` integrado à janela principal."""
+    dialog = Adw.PreferencesDialog(
         search_enabled=True,
-        default_width=620,
-        default_height=680,
+        content_width=620,
+        content_height=680,
         title=t("Settings"),
     )
+    # Mesmo comportamento dos outros painéis: clicar no fundo escurecido
+    # fecha Configurações; cliques no conteúdo seguem normais.
+    prender_fechamento_por_clique_fora(dialog)
 
     page = Adw.PreferencesPage(title=t("Settings"),
                                 icon_name="preferences-system-symbolic")
@@ -727,8 +729,8 @@ def build_preferences(parent, settings):
     reset_button.add_css_class("pill")
 
     def _do_reset(_btn):
-        confirm = Adw.MessageDialog(
-            transient_for=dialog,
+        # O alerta também é um Adw.Dialog; não usa transient_for.
+        confirm = Adw.AlertDialog(
             heading=t("Restore defaults?"),
             body=t("All settings will return to their initial values."),
         )
@@ -740,10 +742,13 @@ def build_preferences(parent, settings):
         def _confirmed(_d, response):
             if response == "reset":
                 settings.reset()
-                dialog.close()
+                # O reset notifica ui.language e pode reconstruir a janela,
+                # fechando este diálogo no meio do callback.
+                if dialog.get_parent() is not None:
+                    dialog.close()
 
         confirm.connect("response", _confirmed)
-        confirm.present()
+        confirm.present(dialog)
 
     reset_button.connect("clicked", _do_reset)
     reset_row.add_suffix(reset_button)
@@ -766,12 +771,11 @@ def build_preferences(parent, settings):
 
     settings.connect(_on_settings_changed)
 
-    def _release(_dialog, *_args):
+    def _release(_dialog):
         settings.disconnect(_on_settings_changed)
-        return False   # False deixa o diálogo fechar normalmente
 
-    # GTK4: Gtk.Window::destroy não dispara no fechar; close-request sim
-    dialog.connect("close-request", _release)
+    # Adw.Dialog emite "closed" quando a animação de fechar termina.
+    dialog.connect("closed", _release)
 
     dialog.add(page)
     return dialog

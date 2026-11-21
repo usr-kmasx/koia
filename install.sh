@@ -196,12 +196,14 @@ if [ "${KOIA_SKIP_DEPS:-0}" != "1" ]; then
     # a tabela de pacotes é uma aposta, o import é o fato: core aborta,
     # bandeja só avisa (o daemon é opcional)
     info "checking the runtime imports"
-    python3 - <<'PY' || die "GTK 4 / libadwaita / libsoup 3 are not importable — install aborted before copying any file"
+    python3 - <<'PY' || die "GTK 4 / libadwaita 1.5+ / libsoup 3 unavailable — install aborted before copying any file"
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("Soup", "3.0")
 from gi.repository import Adw, GdkPixbuf, GLib, Gtk, Soup  # noqa: F401
+if not hasattr(Adw, "PreferencesDialog") or not hasattr(Adw, "AlertDialog"):
+    raise SystemExit("Koia requires libadwaita 1.5+ for its settings dialog")
 PY
     python3 - <<'PY' || warn "the tray runtime is not importable — installing without the tray"
 import gi

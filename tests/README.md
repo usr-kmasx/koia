@@ -12,6 +12,7 @@ estejam instalados. Não é preciso usar `sudo`.
 
     GSETTINGS_BACKEND=memory python3 tests/tab_revealer_test.py
     GSETTINGS_BACKEND=memory python3 tests/search_input_test.py
+    GSETTINGS_BACKEND=memory python3 tests/preferences_dialog_test.py
     GSETTINGS_BACKEND=memory python3 tests/favorites_remove_test.py
     GSETTINGS_BACKEND=memory python3 tests/downloads_delete_test.py
     GSETTINGS_BACKEND=memory python3 tests/downloads_timing_test.py
@@ -19,12 +20,19 @@ estejam instalados. Não é preciso usar `sudo`.
     GSETTINGS_BACKEND=memory python3 tests/page_button_test.py
     GSETTINGS_BACKEND=memory python3 tests/i18n_test.py
 
-- `tab_revealer_test` — dez botões, ordem e ações; Tab/Shift+Tab e hover
-  local independente do foco; timer de 5 s, animação e reconstrução de idioma.
+- `tab_revealer_test` — dez botões, ordem e ações; painel experimental no
+  topo centralizado, com SLIDE_DOWN (recolhe para cima), Tab/Shift+Tab e hover
+  local independente do foco; timer de 5 s e reconstrução de idioma.
   Verifica que a região de hover é limitada ao painel, não à janela inteira.
 - `search_input_test` — entrada de texto somente com Enter, filtro com
   debounce de 2 s, atualização de resultados após requisição em andamento
   e tratamento de erros na busca antiga.
+- `preferences_dialog_test` — migração experimental do painel de opções
+  para `Adw.PreferencesDialog` (libadwaita ≥ 1.5); apresentação integrada
+  ao Koia, pesquisa de preferências, foco condicional do Toplist, alerta
+  `Adw.AlertDialog`, cancelar/restaurar, tradução ao reabrir e limpeza
+  dos observadores no sinal `closed` e fechamento por clique no fundo
+  escurecido (sem fechar ao clicar dentro), sem apresentar uma janela real.
 - `favorites_remove_test` — grade de favoritos: coração preenchido no canto
   superior direito, remoção persistente sem abrir/apagar a imagem, foco no
   card vizinho, atualização do badge e estado vazio.

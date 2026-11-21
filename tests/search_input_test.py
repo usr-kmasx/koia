@@ -41,6 +41,9 @@ def api_search(page=1, on_done=None, on_error=None):
 
 win.api.search = api_search
 dialog = build_preferences(win, settings)
+assert isinstance(dialog, Adw.PreferencesDialog)
+# O Adw.Dialog constrói a árvore quando inserido no host do pai.
+dialog.present(win)
 
 
 def walk(widget):
